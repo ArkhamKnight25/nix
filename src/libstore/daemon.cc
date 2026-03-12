@@ -313,6 +313,19 @@ struct ClientSettings
     }
 };
 
+static void handleIsValidPath(
+    TunnelLogger * logger,
+    ref<Store> store,
+    WorkerProto::BasicServerConnection & conn)
+{
+    WorkerProto::ReadConn rconn(conn);
+    auto path = WorkerProto::Serialise<StorePath>::read(*store, rconn);
+    logger->startWork();
+    bool result = store->isValidPath(path);
+    logger->stopWork();
+    conn.to << result;
+}
+
 static void performOp(
     TunnelLogger * logger,
     ref<Store> store,
@@ -327,11 +340,7 @@ static void performOp(
     switch (op) {
 
     case WorkerProto::Op::IsValidPath: {
-        auto path = WorkerProto::Serialise<StorePath>::read(*store, rconn);
-        logger->startWork();
-        bool result = store->isValidPath(path);
-        logger->stopWork();
-        conn.to << result;
+        handleIsValidPath(logger, store, conn);
         break;
     }
 
