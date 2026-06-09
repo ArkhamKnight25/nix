@@ -1,5 +1,6 @@
 #include "nix/store/derivations.hh"
 #include "nix/store/build/worker.hh"
+#include "nix/store/worker-settings.hh"
 #include "nix/store/build/substitution-goal.hh"
 #include "nix/store/build/derivation-trampoline-goal.hh"
 #include "nix/util/strings.hh"
@@ -88,6 +89,22 @@ BuildResult Worker::buildDerivation(const StorePath & drvPath, const BasicDeriva
                 .msg = e.msg(),
             }}};
     };
+}
+
+BuildResult Worker::buildDerivation(
+    const StorePath & drvPath, const BasicDerivation & drv, const StorePathSet & inputs, BuildMode buildMode)
+{
+    auto substitute = settings.buildersUseSubstitutes ? Substitute : NoSubstitute;
+    copyPaths(evalStore, store, inputs, NoRepair, NoCheckSigs, substitute);
+    return buildDerivation(drvPath, drv, buildMode);
+}
+
+std::vector<KeyedBuildResult>
+Worker::buildPathsWithResults(const std::vector<DerivedPath> & reqs, const StorePathSet & inputs, BuildMode buildMode)
+{
+    auto substitute = settings.buildersUseSubstitutes ? Substitute : NoSubstitute;
+    copyPaths(evalStore, store, inputs, NoRepair, NoCheckSigs, substitute);
+    return buildPathsWithResults(reqs, buildMode);
 }
 
 void Worker::ensurePath(const StorePath & path)

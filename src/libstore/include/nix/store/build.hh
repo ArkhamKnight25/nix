@@ -72,6 +72,17 @@ struct Builder
     virtual BuildResult
     buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode = bmNormal) = 0;
 
+    virtual BuildResult buildDerivation(
+        const StorePath & drvPath,
+        const BasicDerivation & drv,
+        const StorePathSet & inputs,
+        BuildMode buildMode = bmNormal) = 0;
+
+    virtual std::vector<KeyedBuildResult> buildPathsWithResults(
+        const std::vector<DerivedPath> & reqs,
+        const StorePathSet & inputs,
+        BuildMode buildMode = bmNormal) = 0;
+
     /**
      * Ensure that a path is valid.  If it is not currently valid, it
      * may be made valid by running a substitute (if defined for the
