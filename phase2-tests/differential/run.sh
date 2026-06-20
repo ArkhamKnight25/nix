@@ -31,9 +31,11 @@ run_flow() {
   RECORD_PREFIX="$prefix/store" bash "$FLOW_SCRIPT" 2>&1 | tee "$prefix/log.txt"
 }
 
-# The change is COMMITTED (afb5bfb1d). Toggle the six files between HEAD~1
-# (baseline) and HEAD (modified) via checkout. Working tree must be clean on
-# these files before starting.
+# Toggle the six files between the baseline and the change.
+# CODE_REF = the commit that CONTAINS the Phase 2 code change (default: the
+# code commit on exp). baseline = CODE_REF~1, modified = CODE_REF.
+# Override with CODE_REF=<sha> if the layout changes.
+CODE_REF="${CODE_REF:-ecac4ae18}"
 FILES=(
   src/libstore/build/entry-points.cc
   src/libstore/include/nix/store/build.hh
@@ -44,18 +46,18 @@ FILES=(
   src/nix/build-remote/build-remote.cc
 )
 
-restore_head() { ( cd "$ROOT" && git checkout HEAD -- "${FILES[@]}" ); }
-trap restore_head EXIT   # always leave the tree on the committed (modified) version
+restore_head() { ( cd "$ROOT" && git checkout "$CODE_REF" -- "${FILES[@]}" ); }
+trap restore_head EXIT   # always leave the tree on the change version
 
-echo "### DIFFERENTIAL: flow=$FLOW subst=${SUBST:-false}"
+echo "### DIFFERENTIAL: flow=$FLOW subst=${SUBST:-false} code_ref=$CODE_REF"
 
-echo "### 1/4 baseline: checkout HEAD~1 of the six files"
-( cd "$ROOT" && git checkout HEAD~1 -- "${FILES[@]}" )
+echo "### 1/4 baseline: checkout ${CODE_REF}~1 of the six files"
+( cd "$ROOT" && git checkout "${CODE_REF}~1" -- "${FILES[@]}" )
 build_nix
 echo "### 2/4 baseline run"
 run_flow "$BEFORE"
 
-echo "### 3/4 restoring committed change (HEAD)"
+echo "### 3/4 restoring change ($CODE_REF)"
 restore_head
 build_nix
 echo "### 4/4 modified run"
