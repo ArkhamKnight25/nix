@@ -15,7 +15,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 FLOW="${FLOW:-local-offload.sh}"
-FLOW_SCRIPT="$ROOT/amrit-tests/flows/$FLOW"
+FLOW_SCRIPT="$ROOT/phase2-tests/flows/$FLOW"
 
 BEFORE="$HERE/before"
 AFTER="$HERE/after"

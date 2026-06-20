@@ -33,9 +33,12 @@ DRV="$("$NIX" --extra-experimental-features "$XP" --store "$SRC" \
    }).drvPath')"
 echo "ca-drv=$DRV"
 
-"$NIX" --extra-experimental-features "$XP" \
+# Export xp features via NIX_CONFIG so the build-remote SUBPROCESS inherits them too.
+export NIX_CONFIG="experimental-features = $XP"
+
+"$NIX" \
   --store "$SRC" --max-jobs 0 \
-  --builders "$DST $("$NIX" eval --impure --raw --expr 'builtins.currentSystem') - 1 1" \
+  --builders "$DST $("$NIX" eval --impure --raw --expr 'builtins.currentSystem') - 1 1 ca-derivations" \
   --option builders-use-substitutes "$SUBST" \
   build "$DRV^*" --no-link --print-out-paths
 
