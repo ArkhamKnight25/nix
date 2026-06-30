@@ -1,5 +1,7 @@
 #include "nix/store/restricted-store.hh"
+#include "nix/store/build.hh"
 #include "nix/store/build-result.hh"
+#include "nix/store/build/worker.hh"
 #include "nix/util/callback.hh"
 #include "nix/store/realisation.hh"
 #include "nix/store/local-store.hh"
@@ -38,6 +40,10 @@ bool RestrictionContext::isAllowed(const DerivedPath & req)
  */
 struct RestrictedStore : public virtual IndirectRootStore, public virtual GcStore
 {
+private:
+    void anchor() override;
+
+public:
     ref<const LocalStore::Config> config;
 
     ref<LocalStore> next;
@@ -102,26 +108,10 @@ struct RestrictedStore : public virtual IndirectRootStore, public virtual GcStor
 
     void narFromPath(const StorePath & path, Sink & sink) override;
 
-    void ensurePath(const StorePath & path) override;
-
     void registerDrvOutput(const Realisation & info) override;
 
     void queryRealisationUncached(
         const DrvOutput & id, Callback<std::shared_ptr<const UnkeyedRealisation>> callback) noexcept override;
-
-    void
-    buildPaths(const std::vector<DerivedPath> & paths, BuildMode buildMode, std::shared_ptr<Store> evalStore) override;
-
-    std::vector<KeyedBuildResult> buildPathsWithResults(
-        const std::vector<DerivedPath> & paths,
-        BuildMode buildMode = bmNormal,
-        std::shared_ptr<Store> evalStore = nullptr) override;
-
-    BuildResult
-    buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode = bmNormal) override
-    {
-        unsupported("buildDerivation");
-    }
 
     void addTempRoot(const StorePath & path) override {}
 
@@ -157,6 +147,44 @@ struct RestrictedStore : public virtual IndirectRootStore, public virtual GcStor
     }
 };
 
+void RestrictedStore::anchor() {}
+
+/**
+ * A builder that wraps an inner builder, adding restriction checks
+ * and dependency tracking for recursive Nix builds.
+ */
+struct RestrictedBuilder : Builder
+{
+    Worker & inner;
+    RestrictionContext & goal;
+
+    RestrictedBuilder(Worker & inner, RestrictionContext & goal)
+        : inner(inner)
+        , goal(goal)
+    {
+    }
+
+    void buildPaths(const std::vector<DerivedPath> & paths, BuildMode buildMode) override;
+
+    std::vector<KeyedBuildResult>
+    buildPathsWithResults(const std::vector<DerivedPath> & paths, BuildMode buildMode) override;
+
+    BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode) override;
+
+    BuildResult buildDerivation(
+        const StorePath & drvPath,
+        const BasicDerivation & drv,
+        const StorePathSet & inputs,
+        BuildMode buildMode) override;
+
+    std::vector<KeyedBuildResult> buildPathsWithResults(
+        const std::vector<DerivedPath> & reqs, const StorePathSet & inputs, BuildMode buildMode) override;
+
+    void ensurePath(const StorePath & path) override;
+
+    void repairPath(const StorePath & path) override;
+};
+
 ref<Store> makeRestrictedStore(ref<LocalStore::Config> config, ref<LocalStore> next, RestrictionContext & context)
 {
     return make_ref<RestrictedStore>(config, next, context);
@@ -167,8 +195,11 @@ StorePathSet RestrictedStore::queryAllValidPaths()
     StorePathSet paths;
     for (auto & p : goal.originalPaths())
         paths.insert(p);
-    for (auto & p : goal.addedPaths)
-        paths.insert(p);
+    for (auto & [p, future] : goal.state_.lock()->addedPaths) {
+        /* Only report the paths that have finished materialising in the sandbox. */
+        if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            paths.insert(p);
+    }
     return paths;
 }
 
@@ -229,10 +260,10 @@ void RestrictedStore::narFromPath(const StorePath & path, Sink & sink)
     Store::narFromPath(path, sink);
 }
 
-void RestrictedStore::ensurePath(const StorePath & path)
+void RestrictedBuilder::ensurePath(const StorePath & path)
 {
     if (!goal.isAllowed(path))
-        throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", printStorePath(path));
+        throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", inner.store.printStorePath(path));
     /* Nothing to be done; 'path' must already be valid. */
 }
 
@@ -248,41 +279,40 @@ void RestrictedStore::queryRealisationUncached(
 // XXX: This should probably be allowed if the realisation corresponds to
 // an allowed derivation
 {
-    if (!goal.isAllowed(id))
+    if (!goal.isAllowed(id)) {
         callback(nullptr);
+        return;
+    }
     next->queryRealisation(id, std::move(callback));
 }
 
-void RestrictedStore::buildPaths(
-    const std::vector<DerivedPath> & paths, BuildMode buildMode, std::shared_ptr<Store> evalStore)
+void RestrictedBuilder::buildPaths(const std::vector<DerivedPath> & paths, BuildMode buildMode)
 {
-    for (auto & result : buildPathsWithResults(paths, buildMode, evalStore))
+    for (auto & result : buildPathsWithResults(paths, buildMode))
         result.tryThrowBuildError();
 }
 
-std::vector<KeyedBuildResult> RestrictedStore::buildPathsWithResults(
-    const std::vector<DerivedPath> & paths, BuildMode buildMode, std::shared_ptr<Store> evalStore)
+std::vector<KeyedBuildResult>
+RestrictedBuilder::buildPathsWithResults(const std::vector<DerivedPath> & paths, BuildMode buildMode)
 {
-    assert(!evalStore);
-
     if (buildMode != bmNormal)
         throw Error("unsupported build mode");
+
+    for (auto & req : paths) {
+        if (!goal.isAllowed(req))
+            throw InvalidPath("cannot build '%s' in recursive Nix because path is unknown", req.to_string(inner.store));
+    }
+
+    auto results = inner.buildPathsWithResults(paths, buildMode);
 
     StorePathSet newPaths;
     std::set<Realisation> newRealisations;
 
-    for (auto & req : paths) {
-        if (!goal.isAllowed(req))
-            throw InvalidPath("cannot build '%s' in recursive Nix because path is unknown", req.to_string(*next));
-    }
-
-    auto results = next->buildPathsWithResults(paths, buildMode);
-
     for (auto & result : results) {
         if (auto * successP = result.tryGetSuccess()) {
-            if (auto * pathBuilt = std::get_if<DerivedPathBuilt>(&result.path)) {
+            if (auto * pathBuilt = std::get_if<DerivedPath::Built>(&result.path)) {
                 // TODO ugly extra IO
-                auto drvPath = resolveDerivedPath(*next, *pathBuilt->drvPath);
+                auto drvPath = resolveDerivedPath(inner.store, *pathBuilt->drvPath);
                 for (auto & [outputName, output] : successP->builtOutputs) {
                     newPaths.insert(output.outPath);
                     newRealisations.insert(
@@ -297,11 +327,15 @@ std::vector<KeyedBuildResult> RestrictedStore::buildPathsWithResults(
     }
 
     StorePathSet closure;
-    next->computeFSClosure(newPaths, closure);
+    inner.store.computeFSClosure(newPaths, closure);
     for (auto & path : closure)
         goal.addDependency(path);
-    for (auto & real : newRealisations)
-        goal.addedDrvOutputs.insert(real.id);
+
+    {
+        auto state(goal.state_.lock());
+        for (auto & real : newRealisations)
+            state->addedDrvOutputs.insert(real.id);
+    }
 
     return results;
 }
@@ -327,6 +361,34 @@ MissingPaths RestrictedStore::queryMissing(const std::vector<DerivedPath> & targ
         res.unknown.insert(p);
 
     return res;
+}
+
+ref<Builder> makeRestrictedBuilder(Worker & inner, RestrictionContext & context)
+{
+    return make_ref<RestrictedBuilder>(inner, context);
+}
+
+BuildResult
+RestrictedBuilder::buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode)
+{
+    throw Unsupported("buildDerivation");
+}
+
+BuildResult RestrictedBuilder::buildDerivation(
+    const StorePath & drvPath, const BasicDerivation & drv, const StorePathSet & inputs, BuildMode buildMode)
+{
+    throw Unsupported("buildDerivation (with inputs)");
+}
+
+std::vector<KeyedBuildResult> RestrictedBuilder::buildPathsWithResults(
+    const std::vector<DerivedPath> & reqs, const StorePathSet & inputs, BuildMode buildMode)
+{
+    throw Unsupported("buildPathsWithResults (with inputs)");
+}
+
+void RestrictedBuilder::repairPath(const StorePath & path)
+{
+    throw Unsupported("repairPath");
 }
 
 } // namespace nix

@@ -16,7 +16,6 @@
   # work around https://github.com/NixOS/nix/issues/7730
   inputs.flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
   inputs.git-hooks-nix.inputs.nixpkgs.follows = "nixpkgs";
-  inputs.git-hooks-nix.inputs.nixpkgs-stable.follows = "nixpkgs";
   # work around 7730 and https://github.com/NixOS/nix/issues/7807
   inputs.git-hooks-nix.inputs.flake-compat.follows = "";
   inputs.git-hooks-nix.inputs.gitignore.follows = "";
@@ -328,12 +327,6 @@
         // (lib.optionalAttrs (builtins.elem system linux64BitSystems)) {
           dockerImage = self.hydraJobs.dockerImage.${system};
         }
-        // (lib.optionalAttrs (!(builtins.elem system linux32BitSystems))) {
-          # Some perl dependencies are broken on i686-linux.
-          # Since the support is only best-effort there, disable the perl
-          # bindings
-          perlBindings = self.hydraJobs.perlBindings.${system};
-        }
         # Add "passthru" tests
         //
           flatMapAttrs
@@ -422,10 +415,6 @@
                 supportsCross = false;
               };
 
-              "nix-perl-bindings" = {
-                supportsCross = false;
-              };
-
               "nix-clang-tidy-plugin" = {
                 supportsCross = false;
               };
@@ -466,6 +455,9 @@
                 )
               )
             )
+        // lib.optionalAttrs (self.hydraJobs.rustInstaller ? ${system}) {
+          rustInstaller = self.hydraJobs.rustInstaller.${system};
+        }
         // lib.optionalAttrs (builtins.elem system linux64BitSystems) {
           dockerImage =
             let

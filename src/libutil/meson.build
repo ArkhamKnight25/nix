@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -136,6 +136,7 @@ sources = [ config_priv_h ] + files(
   'base-n.cc',
   'base-nix-32.cc',
   'bump-memory-resource.cc',
+  'caching-source-accessor.cc',
   'canon-path.cc',
   'compression-algo.cc',
   'compression-settings.cc',

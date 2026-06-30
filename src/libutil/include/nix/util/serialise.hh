@@ -177,6 +177,7 @@ struct FdSink : BufferedSink
     FdSink(const FdSink &) = delete;
     FdSink & operator=(const FdSink &) = delete;
 
+    // NOLINTNEXTLINE(performance-noexcept-move-constructor) - can throw
     FdSink & operator=(FdSink && s)
     {
         flush();
@@ -566,6 +567,10 @@ inline uint64_t readLongLong(Source & source)
     return readNum<uint64_t>(source);
 }
 
+/**
+ * Read padding bytes to align `len` up to a multiple of 8. Throws
+ * SerialisationError if any padding byte is non-zero.
+ */
 void readPadding(size_t len, Source & source);
 size_t readString(char * buf, size_t max, Source & source);
 std::string readString(Source & source, size_t max = std::numeric_limits<size_t>::max());
@@ -648,8 +653,8 @@ struct FramedSource : Source
                     auto n = readInt(from);
                     if (!n)
                         break;
-                    std::vector<char> data(n);
-                    from(data.data(), n);
+                    pending.resize(n);
+                    from(pending.data(), n);
                 }
             }
         } catch (...) {
@@ -668,11 +673,12 @@ struct FramedSource : Source
                 eof = true;
                 return 0;
             }
-            pending = std::vector<char>(len);
+            pending.resize(len);
             pos = 0;
             from(pending.data(), len);
         }
 
+        assert(pending.size() > pos); /* Sanity check. */
         auto n = std::min(len, pending.size() - pos);
         memcpy(data, pending.data() + pos, n);
         pos += n;

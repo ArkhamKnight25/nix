@@ -8,7 +8,6 @@
 #include "nix/util/util.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
-#include "nix/store/daemon.hh"
 #include "nix/util/topo-sort.hh"
 #include "nix/store/build/child.hh"
 #include "nix/util/unix-domain-socket.hh"
@@ -41,6 +40,8 @@
 #include <pwd.h>
 #include <grp.h>
 #include <iostream>
+#include <list>
+#include <atomic>
 
 #include "nix/util/strings.hh"
 #include "nix/util/signals.hh"
@@ -226,10 +227,16 @@ protected:
      */
     std::thread daemonThread;
 
+    struct DaemonWorkerState
+    {
+        std::thread thread;
+        ref<std::atomic_flag> done;
+    };
+
     /**
      * The daemon worker threads.
      */
-    std::vector<std::thread> daemonWorkerThreads;
+    std::list<DaemonWorkerState> daemonWorkerThreads;
 
     const StorePathSet & originalPaths() override
     {
@@ -238,12 +245,18 @@ protected:
 
     bool isAllowed(const StorePath & path) override
     {
-        return inputPaths.count(path) || addedPaths.count(path);
+        if (inputPaths.count(path))
+            return true;
+        auto state(state_.lock());
+        auto iter = state->addedPaths.find(path);
+        if (iter == state->addedPaths.end())
+            return false;
+        return iter->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
     }
 
     bool isAllowed(const DrvOutput & id) override
     {
-        return addedDrvOutputs.count(id);
+        return state_.lock()->addedDrvOutputs.count(id);
     }
 
     bool isAllowed(const DerivedPath & req);
@@ -968,7 +981,7 @@ void DerivationBuilderImpl::openSlave()
 {
     std::string slaveName = getPtsName(builderOut.get());
 
-    AutoCloseFD builderOut = open(slaveName.c_str(), O_RDWR | O_NOCTTY);
+    AutoCloseFD builderOut = open(slaveName.c_str(), O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (!builderOut)
         throw SysError("opening pseudoterminal slave");
 
@@ -1050,7 +1063,7 @@ void DerivationBuilderImpl::processSandboxSetupMessages()
             FdSource source(builderOut.get());
             auto ex = readError(source);
             ex.addTrace({}, "while setting up the build environment");
-            throw ex;
+            throw std::move(ex);
         }
         debug("sandbox setup: " + msg);
         msgs.push_back(std::move(msg));
@@ -1165,7 +1178,7 @@ void DerivationBuilderImpl::startDaemon()
         ref<LocalStore>(std::dynamic_pointer_cast<LocalStore>(this->store.shared_from_this())),
         *this);
 
-    addedPaths.clear();
+    state_.lock()->addedPaths.clear();
 
     auto socketName = ".nix-socket";
     std::filesystem::path socketPath = tmpDir / socketName;
@@ -1195,19 +1208,40 @@ void DerivationBuilderImpl::startDaemon()
 
             debug("received daemon connection");
 
-            auto workerThread = std::thread([store, remote{std::move(remote)}]() {
+            auto doneFlag = make_ref<std::atomic_flag>();
+
+            auto workerThread = std::thread([this, doneFlag, store, remote{std::move(remote)}]() {
                 try {
-                    daemon::processConnection(
-                        store, FdSource(remote.get()), FdSink(remote.get()), NotTrusted, daemon::Recursive);
+                    miscMethods->processDaemonConnection(store, FdSource(remote.get()), FdSink(remote.get()), *this);
                     debug("terminated daemon connection");
                 } catch (const Interrupted &) {
                     debug("interrupted daemon connection");
-                } catch (SystemError &) {
+                } catch (...) {
+                    /* Swallow all exceptions to avoid crashing the the process (exceptions that escape from the thread
+                     * trigger std::terminate()). */
                     ignoreExceptionExceptInterrupt();
                 }
+
+                doneFlag->test_and_set(std::memory_order_relaxed);
             });
 
-            daemonWorkerThreads.push_back(std::move(workerThread));
+            daemonWorkerThreads.push_back(
+                DaemonWorkerState{
+                    .thread = std::move(workerThread),
+                    .done = std::move(doneFlag),
+                });
+
+            /* Prune threads eagerly to free up resources. Ideally we'd also limit the number of concurrent workers. */
+            for (auto it = daemonWorkerThreads.begin(), end = daemonWorkerThreads.end(); it != end;) {
+                auto & state = *it;
+                auto & thread = state.thread;
+                if (state.done->test(std::memory_order_relaxed) && thread.joinable()) {
+                    thread.join();
+                    it = daemonWorkerThreads.erase(it);
+                } else {
+                    ++it;
+                }
+            }
         }
 
         debug("daemon shutting down");
@@ -1236,9 +1270,7 @@ void DerivationBuilderImpl::stopDaemon()
     if (daemonThread.joinable())
         daemonThread.join();
 
-    // FIXME: should prune worker threads more quickly.
-    // FIXME: shutdown the client socket to speed up worker termination.
-    for (auto & thread : daemonWorkerThreads)
+    for (auto & [thread, doneFlag] : daemonWorkerThreads)
         thread.join();
     daemonWorkerThreads.clear();
 
@@ -1246,10 +1278,7 @@ void DerivationBuilderImpl::stopDaemon()
     daemonSocket.close();
 }
 
-void DerivationBuilderImpl::addDependencyImpl(const StorePath & path)
-{
-    addedPaths.insert(path);
-}
+void DerivationBuilderImpl::addDependencyImpl(const StorePath & path) {}
 
 void DerivationBuilderImpl::chownToBuilder(const std::filesystem::path & path)
 {
@@ -1345,7 +1374,7 @@ void DerivationBuilderImpl::runChild(RunChildArgs args)
         /* If this is a builtin builder, call it now. This should not return. */
         if (drv.isBuiltin()) {
             try {
-                logger = makeJSONLogger(getStandardError());
+                logger = makeJSONLogger(getStandardError()).release();
 
                 for (auto & e : drv.outputs)
                     ctx.outputs.insert_or_assign(e.first, store.printStorePath(scratchOutputs.at(e.first)));
@@ -1434,7 +1463,7 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
         referenceablePaths.insert(p);
     for (auto & i : scratchOutputs)
         referenceablePaths.insert(i.second);
-    for (auto & p : addedPaths)
+    for (auto & [p, _] : state_.lock()->addedPaths)
         referenceablePaths.insert(p);
 
     /* Check whether the output paths were created, and make all
@@ -1642,7 +1671,12 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                     dumpPath(actualPath, rsink);
                     rsink.flush();
                 });
-                std::filesystem::path tmpPath = actualPath.native() + ".tmp";
+                /* Put the temporary copy in a directory inaccessible to the builder.
+                   actualPath might point inside the build chroot, which is controlled
+                   by the derivation builder. */
+                auto [rewriteTempDir, rewriteTempDirFd] = store.createTempDirInStore();
+                AutoDelete delRewriteTempDir(rewriteTempDir);
+                std::filesystem::path tmpPath = rewriteTempDir / "x";
                 restorePath(tmpPath, *source);
                 deletePath(actualPath);
                 movePath(tmpPath, actualPath);
@@ -1713,12 +1747,11 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                     HashModuloSink caSink{outputHash.hashAlgo, oldHashPart};
                     auto fim = outputHash.method.getFileIngestionMethod();
                     dumpPath(
-                        {getFSSourceAccessor(), CanonPath(actualPath.native())}, caSink, (FileSerialisationMethod) fim);
+                        {makeFSSourceAccessor(actualPath), CanonPath::root}, caSink, (FileSerialisationMethod) fim);
                     return caSink.finish().hash;
                 }
                 case FileIngestionMethod::Git: {
-                    return git::dumpHash(outputHash.hashAlgo, {getFSSourceAccessor(), CanonPath(actualPath.native())})
-                        .hash;
+                    return git::dumpHash(outputHash.hashAlgo, {makeFSSourceAccessor(actualPath), CanonPath::root}).hash;
                 }
                 }
                 assert(false);
@@ -1740,7 +1773,7 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
 
             {
                 HashResult narHashAndSize = hashPath(
-                    {getFSSourceAccessor(), CanonPath(actualPath.native())},
+                    {makeFSSourceAccessor(actualPath), CanonPath::root},
                     FileSerialisationMethod::NixArchive,
                     HashAlgorithm::SHA256);
                 newInfo0.narHash = narHashAndSize.hash;
@@ -1762,8 +1795,10 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                any stale writable file descriptors. Copy through the
                serialisation/deserialisation. TODO: Use copyRecursive here and
                make use of reflinking. */
-            auto source = sinkToSource([&](Sink & nextSink) { dumpPath(actualPath, nextSink); });
-            restorePath(tmpOutput, *source, store.config->getLocalSettings().fsyncStorePaths);
+            auto pathAccessor = makeFSSourceAccessor(actualPath);
+            RestoreSink restoreSink{store.config->getLocalSettings().fsyncStorePaths};
+            restoreSink.dstPath = tmpOutput;
+            copyRecursive(*pathAccessor, CanonPath::root, restoreSink, CanonPath::root);
             /* This makes it slightly harder to make sense of the control flow. The rule
                of thumb is that actualPath points to the current location of the stuff
                that we'll end up registering. */
@@ -1783,7 +1818,7 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                             std::string{scratchPath->hashPart()}, std::string{requiredFinalPath.hashPart()});
                     rewriteOutput(outputRewrites);
                     HashResult narHashAndSize = hashPath(
-                        {getFSSourceAccessor(), CanonPath(actualPath.native())},
+                        {makeFSSourceAccessor(actualPath), CanonPath::root},
                         FileSerialisationMethod::NixArchive,
                         HashAlgorithm::SHA256);
                     ValidPathInfo newInfo0{requiredFinalPath, {store, narHashAndSize.hash}};
@@ -1850,7 +1885,23 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
         auto optFixedPath = output->path(store, drv.name, outputName);
         if (!optFixedPath || store.printStorePath(*optFixedPath) != finalDestPath) {
             assert(newInfo.ca);
-            dynamicOutputLock.lockPaths({store.toRealPath(newInfo.path)});
+
+            /* Don't wait on lock for the hash-mismatching fixed-output
+               derivation case, to avoid a deadlock in the case where a build
+               with the correct hash is in progress. */
+            bool locked = dynamicOutputLock.lockPaths({store.toRealPath(newInfo.path)}, "", !optFixedPath);
+
+            /* If we can't lock the correct path, clean up and bail now. */
+            if (!locked) {
+                debug(
+                    "failed to lock correct output path of %s, namely %s, not moving output",
+                    store.printStorePath(drvPath),
+                    PathFmt(store.toRealPath(newInfo.path)));
+                deletePath(actualPath);
+                /* Trigger the hash-mismatch error. */
+                checkCAFixedOutput(store, drvPath, *output, newInfo);
+                unreachable();
+            }
         }
 
         /* Move files, if needed */

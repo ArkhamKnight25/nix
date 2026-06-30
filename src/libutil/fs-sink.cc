@@ -34,10 +34,12 @@ void copyRecursive(SourceAccessor & accessor, const CanonPath & from, FileSystem
     }
 
     case SourceAccessor::tDirectory: {
-        sink.createDirectory(to, [&](FileSystemObjectSink & dirSink, const CanonPath & relDirPath) {
-            for (auto & [name, _] : accessor.readDirectory(from)) {
-                copyRecursive(accessor, from / name, dirSink, relDirPath / name);
-            }
+        sink.createDirectory(to, [&](FileSystemObjectSink & dirSink, const CanonPath & relDirPathTo) {
+            accessor.readDirectory(from, [&](SourceAccessor & subdirAccessor, const CanonPath & relDirPathFrom) {
+                for (auto & [name, _] : subdirAccessor.readDirectory(relDirPathFrom)) {
+                    copyRecursive(subdirAccessor, relDirPathFrom / name, dirSink, relDirPathTo / name);
+                }
+            });
         });
         break;
     }
@@ -265,6 +267,9 @@ void RestoreRegularFile::preallocateContents(uint64_t len)
 
 #if HAVE_POSIX_FALLOCATE
     if (len) {
+        if (len > std::numeric_limits<off_t>::max())
+            throw Error("cannot preallocate contents for a file because it's too large");
+
         errno = posix_fallocate(fd.get(), 0, len);
         /* Note that EINVAL may indicate that the underlying
            filesystem doesn't support preallocation (e.g. on

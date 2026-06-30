@@ -23,6 +23,7 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <queue>
 #include <random>
@@ -281,7 +282,11 @@ struct curlFileTransfer : public FileTransfer
             try {
                 if (!done && enqueued)
                     fail(FileTransferError(
-                        Interrupted, {}, "%s of '%s' was interrupted", Uncolored(request.noun()), request.uri));
+                        Interrupted,
+                        {},
+                        "%s of '%s' was interrupted",
+                        Uncolored(request.noun()),
+                        request.displayUri()));
             } catch (...) {
                 ignoreExceptionInDestructor();
             }
@@ -297,7 +302,7 @@ struct curlFileTransfer : public FileTransfer
                 /* Already descriptive enough. */
             } catch (nix::Error & e) {
                 /* Add more context to the error message. */
-                e.addTrace({}, "during %s of '%s'", Uncolored(request.noun()), request.uri.to_string());
+                e.addTrace({}, "during %s of '%s'", Uncolored(request.noun()), request.displayUri());
             } catch (...) {
                 /* Can't add more context to the error. */
             }
@@ -361,7 +366,7 @@ struct curlFileTransfer : public FileTransfer
         try {
             size_t realSize = size * nmemb;
             std::string line((char *) contents, realSize);
-            printMsg(lvlVomit, "got header for '%s': %s", request.uri, trim(line));
+            printMsg(lvlVomit, "got header for '%s': %s", request.displayUri(), trim(line));
 
             static std::regex statusLine("HTTP/[^ ]+ +[0-9]+(.*)", std::regex::extended | std::regex::icase);
             if (std::smatch match; std::regex_match(line, match, statusLine)) {
@@ -450,8 +455,8 @@ struct curlFileTransfer : public FileTransfer
                     *logger,
                     lvlTalkative,
                     actFileTransfer,
-                    fmt("%s '%s'", request.verb(/*continuous=*/true), request.uri),
-                    Logger::Fields{request.uri.to_string()},
+                    fmt("%s '%s'", request.verb(/*continuous=*/true), request.displayUri()),
+                    Logger::Fields{request.displayUri()},
                     request.parentAct);
                 // Reset the start time to when we actually started the download.
                 startTime = std::chrono::steady_clock::now();
@@ -651,6 +656,14 @@ struct curlFileTransfer : public FileTransfer
 #endif
             curl_easy_setopt(req, CURLOPT_CONNECTTIMEOUT, fileTransfer.settings.connectTimeout.get());
 
+            /* Enable TCP keepalive to detect dead connections and server closures.
+               Probes every 30s to catch network failures and idle timeouts early. */
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPALIVE, 1L);
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPIDLE, 30L);
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPINTVL, 30L);
+            /* Don't reuse idle connections older than 90s. */
+            curl_easy_setopt(req, CURLOPT_MAXAGE_CONN, 90L);
+
             curl_easy_setopt(req, CURLOPT_LOW_SPEED_LIMIT, 1L);
             curl_easy_setopt(req, CURLOPT_LOW_SPEED_TIME, fileTransfer.settings.stalledDownloadTimeout.get());
 
@@ -716,7 +729,7 @@ struct curlFileTransfer : public FileTransfer
             debug(
                 "finished %s of '%s'; curl status = %d, HTTP status = %d, body = %d bytes, duration = %.2f s",
                 Uncolored(request.noun()),
-                request.uri,
+                request.displayUri(),
                 code,
                 httpStatus,
                 result.bodySize,
@@ -752,14 +765,47 @@ struct curlFileTransfer : public FileTransfer
                 // We treat most errors as transient, but won't retry when hopeless
                 Error err = Transient;
 
-                if (httpStatus == HttpStatus::NotFound || httpStatus == HttpStatus::Gone
+                // S3 returns certain retryable errors as HTTP 400/500/503 with XML error codes.
+                // These take precedence over the generic HTTP status handling below.
+                // Only parse the response body on status codes where S3 XML errors can appear.
+                static constexpr std::array<std::string_view, 12> s3RetryableErrors{{
+                    "IncompleteBody",       // HTTP 400 - network issue
+                    "InternalError",        // HTTP 500 - S3 internal failure
+                    "InternalFailure",      // HTTP 500 - alias for InternalError
+                    "InternalServerError",  // HTTP 500 - alias for InternalError
+                    "RequestExpired",       // HTTP 400 - clock skew / slow upload
+                    "RequestTimeout",       // HTTP 400 - stale connection reuse
+                    "RequestTimeTooSkewed", // HTTP 403 - clock drift
+                    "RequestThrottled",     // HTTP 400 - throttling variant
+                    "SlowDown",             // HTTP 503 - throttling
+                    "ServiceUnavailable",   // HTTP 503 - temporary unavailability
+                    "Throttling",           // HTTP 400 - throttling variant
+                    "ThrottledException",   // HTTP 400 - throttling variant
+                }};
+                // S3 error responses have the form <Error><Code>...</Code>...</Error>.
+                // Require the <Error> root to avoid matching unrelated XML with a <Code> element.
+                static std::regex s3ErrorCodeRegex("<Error>[^]*<Code>([^<]+)</Code>");
+                std::smatch s3Match;
+                bool isS3XmlStatus = httpStatus == 400 || httpStatus == 403 || httpStatus == 500 || httpStatus == 503;
+                auto s3ErrorCode =
+                    (isS3XmlStatus && errorSink && std::regex_search(errorSink->s, s3Match, s3ErrorCodeRegex))
+                        ? s3Match[1].str()
+                        : "";
+
+                if (std::find(s3RetryableErrors.begin(), s3RetryableErrors.end(), s3ErrorCode)
+                    != s3RetryableErrors.end()) {
+                    debug("S3 error '%s', will retry", s3ErrorCode);
+                } else if (
+                    httpStatus == HttpStatus::NotFound || httpStatus == HttpStatus::Gone
                     || code == CURLE_FILE_COULDNT_READ_FILE) {
                     // The file is definitely not there
                     err = NotFound;
-                } else if (
-                    httpStatus == HttpStatus::Unauthorized || httpStatus == HttpStatus::Forbidden
-                    || httpStatus == HttpStatus::ProxyAuthRequired) {
-                    // Don't retry on authentication/authorization failures
+                } else if (httpStatus == HttpStatus::Unauthorized || httpStatus == HttpStatus::ProxyAuthRequired) {
+                    err = Unauthorized;
+                } else if (httpStatus == HttpStatus::Forbidden) {
+                    // Don't retry on authentication/authorization failures.
+                    // Note: the only reason we treat this differently from 401/407 is S3 returns 403 if a file doesn't
+                    // exist and the bucket is unlistable.
                     err = Forbidden;
                 } else if (
                     httpStatus >= 400 && httpStatus < 500 && httpStatus != HttpStatus::RequestTimeout
@@ -815,14 +861,14 @@ struct curlFileTransfer : public FileTransfer
                                                                                        std::move(response),
                                                                                        "%s of '%s' was interrupted",
                                                                                        Uncolored(request.noun()),
-                                                                                       request.uri)
+                                                                                       request.displayUri())
                            : httpStatus != 0
                                ? FileTransferError(
                                      err,
                                      std::move(response),
                                      "unable to %s '%s': HTTP error %d%s",
                                      Uncolored(request.verb()),
-                                     request.uri,
+                                     request.displayUri(),
                                      httpStatus,
                                      code == CURLE_OK ? "" : fmt(" (curl error: %s)", curl_easy_strerror(code)))
                                : FileTransferError(
@@ -830,7 +876,7 @@ struct curlFileTransfer : public FileTransfer
                                      std::move(response),
                                      "unable to %s '%s': %s (%d) %s",
                                      Uncolored(request.verb()),
-                                     request.uri,
+                                     request.displayUri(),
                                      curl_easy_strerror(code),
                                      code,
                                      errbuf);
@@ -1081,7 +1127,7 @@ struct curlFileTransfer : public FileTransfer
             }
 
             for (auto & item : incoming) {
-                debug("starting %s of '%s'", Uncolored(item->request.noun()), item->request.uri);
+                debug("starting %s of '%s'", Uncolored(item->request.noun()), item->request.displayUri());
                 item->init();
                 curl_multi_add_handle(curlm.get(), item->req);
                 item->active = true;
@@ -1133,7 +1179,7 @@ struct curlFileTransfer : public FileTransfer
     {
         if (item->request.data && item->request.uri.scheme() != "http" && item->request.uri.scheme() != "https"
             && item->request.uri.scheme() != "s3")
-            throw nix::Error("uploading to '%s' is not supported", item->request.uri.to_string());
+            throw nix::Error("uploading to '%s' is not supported", item->request.displayUri());
 
         {
             auto state(state_.lock());
@@ -1179,19 +1225,35 @@ ref<curlFileTransfer> makeCurlFileTransfer(const FileTransferSettings & settings
     return make_ref<curlFileTransfer>(settings);
 }
 
+static auto * const _fileTransfer = new Sync<std::shared_ptr<curlFileTransfer>>;
+
 ref<FileTransfer> getFileTransfer()
 {
-    static ref<curlFileTransfer> fileTransfer = makeCurlFileTransfer();
+    auto fileTransfer(_fileTransfer->lock());
 
-    if (fileTransfer->state_.lock()->isQuitting())
-        fileTransfer = makeCurlFileTransfer();
+    if (!*fileTransfer || (*fileTransfer)->state_.lock()->isQuitting())
+        *fileTransfer = makeCurlFileTransfer().get_ptr();
 
-    return fileTransfer;
+    return ref<FileTransfer>(*fileTransfer);
 }
 
 ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
 {
     return makeCurlFileTransfer(settings);
+}
+
+std::string FileTransferRequest::displayUri() const
+{
+    try {
+        auto parsed = uri.parsed();
+        if (parsed.authority && parsed.authority->user) {
+            parsed.authority->user.reset();
+            parsed.authority->password.reset();
+            return parsed.to_string();
+        }
+    } catch (BadURL &) {
+    }
+    return uri.to_string();
 }
 
 void FileTransferRequest::setupForS3()
@@ -1283,7 +1345,7 @@ void FileTransfer::download(
         state->request.notify_one();
     });
 
-    request.dataCallback = [_state, uri = request.uri.to_string()](std::string_view data) -> PauseTransfer {
+    request.dataCallback = [_state, uri = request.displayUri()](std::string_view data) -> PauseTransfer {
         auto state(_state->lock());
 
         if (state->quit)

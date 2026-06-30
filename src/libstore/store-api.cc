@@ -6,6 +6,7 @@
 #include "nix/store/realisation.hh"
 #include "nix/store/derivations.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 #include "nix/store/store-open.hh"
 #include "nix/store/outputs-query.hh"
 #include "nix/util/util.hh"
@@ -55,21 +56,19 @@ StoreConfigBase::StoreDirSetting::StoreDirSetting(Config * options, FilePathType
 
               switch (pathType) {
               case FilePathType::Unix:
-                  return canonStoreDir(
-                      envOverrides.transform([](auto && s) { return os_string_to_string(std::move(s)); })
-                          .value_or(NIX_STORE_DIR));
+                  return canonStoreDir(envOverrides.transform([](const auto & s) { return os_string_to_string(s); })
+                                           .value_or(NIX_STORE_DIR));
 
               case FilePathType::Native:
-                  return canonStoreDir(
-                      envOverrides.transform([](auto && s) { return std::filesystem::path(std::move(s)); })
-                          .or_else([]() -> std::optional<std::filesystem::path> {
+                  return canonStoreDir(envOverrides.transform([](const auto & s) { return std::filesystem::path(s); })
+                                           .or_else([]() -> std::optional<std::filesystem::path> {
 #ifdef _WIN32
-                              return windows::known_folders::getProgramData() / "nix" / "store";
+                                               return windows::known_folders::getProgramData() / "nix" / "store";
 #else
-                              return std::filesystem::path{NIX_STORE_DIR};
+                                               return std::filesystem::path{NIX_STORE_DIR};
 #endif
-                          })
-                          .value());
+                                           })
+                                           .value());
               }
               assert(false);
           }(),
@@ -722,7 +721,7 @@ void Store::substitutePaths(const StorePathSet & paths)
             std::vector<DerivedPath> subs;
             for (auto & p : missing.willSubstitute)
                 subs.emplace_back(DerivedPath::Opaque{p});
-            buildPaths(subs);
+            nix::getDefaultBuilder(*this)->buildPaths(subs, bmNormal);
         } catch (Error & e) {
             logWarning(e.info());
         }
@@ -1087,7 +1086,8 @@ void copyClosure(
     const RealisedPath::Set & paths,
     RepairFlag repair,
     CheckSigsFlag checkSigs,
-    SubstituteFlag substitute)
+    SubstituteFlag substitute,
+    bool includeOutputs)
 {
     if (&srcStore == &dstStore)
         return;
@@ -1098,7 +1098,7 @@ void copyClosure(
     }
 
     StorePathSet closure1;
-    srcStore.computeFSClosure(closure0, closure1);
+    srcStore.computeFSClosure(closure0, closure1, false, includeOutputs);
 
     RealisedPath::Set closure = paths;
     for (auto && path : closure1)
@@ -1113,13 +1113,14 @@ void copyClosure(
     const StorePathSet & storePaths,
     RepairFlag repair,
     CheckSigsFlag checkSigs,
-    SubstituteFlag substitute)
+    SubstituteFlag substitute,
+    bool includeOutputs)
 {
     if (&srcStore == &dstStore)
         return;
 
     StorePathSet closure;
-    srcStore.computeFSClosure(storePaths, closure);
+    srcStore.computeFSClosure(storePaths, closure, false, includeOutputs);
     copyPaths(srcStore, dstStore, closure, repair, checkSigs, substitute);
 }
 
@@ -1163,7 +1164,7 @@ decodeValidPathInfo(const Store & store, std::istream & str, std::optional<HashR
 
 Derivation Store::derivationFromPath(const StorePath & drvPath)
 {
-    ensurePath(drvPath);
+    nix::getDefaultBuilder(*this)->ensurePath(drvPath);
     return readDerivation(drvPath);
 }
 

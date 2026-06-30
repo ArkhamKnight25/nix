@@ -42,6 +42,16 @@ struct GCOptions
     struct WholeStore
     {};
 
+    struct SpecificPaths
+    {
+        StorePathSet paths;
+
+        /**
+         * Allow dead referrers of candidate paths to also be deleted.
+         */
+        bool deleteReferrers = false;
+    };
+
     GCAction action{gcDeleteDead};
 
     /**
@@ -55,7 +65,7 @@ struct GCOptions
     /**
      * The paths from which to delete.
      */
-    using GCPaths = std::variant<WholeStore, StorePathSet>;
+    using GCPaths = std::variant<WholeStore, SpecificPaths>;
     GCPaths pathsToDelete;
 
     /**
@@ -106,6 +116,10 @@ struct GCResults
  */
 struct GcStore : public virtual Store
 {
+private:
+    void anchor() override;
+
+public:
     inline static std::string operationName = "Garbage collection";
 
     /**

@@ -16,7 +16,7 @@
 
 namespace nix {
 
-Worker::Worker(Store & store, Store & evalStore)
+Worker::Worker(ref<Store> store, ref<Store> evalStore)
     /* Can't use make_ref, because the constructor is private. */
     : wakerState(ref<Waker>(new Waker{}))
     , act(*logger, actRealise)
@@ -25,8 +25,8 @@ Worker::Worker(Store & store, Store & evalStore)
 #ifdef _WIN32
     , ioport{CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0)}
 #endif
-    , store(store)
-    , evalStore(evalStore)
+    , destStore(std::move(store))
+    , srcStore(std::move(evalStore))
     , settings(nix::settings.getWorkerSettings())
     , getSubstituters{[] {
         return nix::settings.getWorkerSettings().useSubstitutes ? getDefaultSubstituters() : std::list<ref<Store>>{};
@@ -61,7 +61,7 @@ std::shared_ptr<G> Worker::initGoalIfNeeded(std::weak_ptr<G> & goal_weak, Args &
     if (auto goal = goal_weak.lock())
         return goal;
 
-    auto goal = std::make_shared<G>(args...);
+    auto goal = std::make_shared<G>(std::forward<Args>(args)...);
     goal_weak = goal;
     wakeUp(goal);
     return goal;
@@ -104,7 +104,7 @@ std::shared_ptr<DerivationGoal> Worker::makeDerivationGoal(
 }
 
 std::shared_ptr<DerivationResolutionGoal>
-Worker::makeDerivationResolutionGoal(const StorePath & drvPath, const Derivation & drv, BuildMode buildMode)
+Worker::makeDerivationResolutionGoal(const StorePath & drvPath, ref<const Derivation> drv, BuildMode buildMode)
 {
     return initGoalIfNeeded(derivationResolutionGoals[drvPath], drvPath, drv, *this, buildMode);
 }
@@ -295,28 +295,11 @@ void Worker::waitForCompletion(GoalPtr goal)
 
 void Worker::run(const Goals & _topGoals)
 {
-    std::vector<nix::DerivedPath> topPaths;
-
-    for (auto & i : _topGoals) {
-        topGoals.insert(i);
-        if (auto goal = dynamic_cast<DerivationTrampolineGoal *>(i.get())) {
-            topPaths.push_back(
-                DerivedPath::Built{
-                    .drvPath = goal->drvReq,
-                    .outputs = goal->wantedOutputs,
-                });
-        } else if (auto goal = dynamic_cast<PathSubstitutionGoal *>(i.get())) {
-            topPaths.push_back(DerivedPath::Opaque{goal->storePath});
-        }
-    }
-
-    /* Call queryMissing() to efficiently query substitutes. */
-    store.queryMissing(topPaths);
-
     debug("entered goal loop");
+    for (std::shared_ptr<Goal> goal : _topGoals)
+        topGoals.insert(std::move(goal));
 
     while (1) {
-
         checkInterrupt();
 
         // TODO GC interface?

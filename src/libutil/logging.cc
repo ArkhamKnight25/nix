@@ -30,7 +30,11 @@ void setCurActivity(const ActivityId activityId)
     curActivity = activityId;
 }
 
-std::unique_ptr<Logger> logger = makeSimpleLogger(true);
+/**
+ * This is a raw pointer to allow it to leak.
+ * Avoids races in activity teardown.
+ */
+Logger * logger = makeSimpleLogger(true).release();
 
 void Logger::warn(const std::string & msg)
 {
@@ -359,9 +363,15 @@ std::unique_ptr<Logger> makeJSONLogger(const std::filesystem::path & path, bool 
         }
     };
 
-    AutoCloseFD fd = std::filesystem::is_socket(path)
-                         ? connect(path)
-                         : toDescriptor(open(path.string().c_str(), O_CREAT | O_APPEND | O_WRONLY, 0644));
+    AutoCloseFD fd = std::filesystem::is_socket(path) ? connect(path)
+                                                      : toDescriptor(open(
+                                                            path.string().c_str(),
+                                                            O_CREAT | O_APPEND | O_WRONLY
+#ifndef _WIN32
+                                                                | O_CLOEXEC
+#endif
+                                                            ,
+                                                            0644));
     if (!fd)
         throw SysError("opening log file %1%", PathFmt(path));
 
@@ -375,7 +385,7 @@ void applyJSONLogger()
             std::vector<std::unique_ptr<Logger>> loggers;
             loggers.push_back(makeJSONLogger(*opt, false));
             try {
-                logger = makeTeeLogger(std::move(logger), std::move(loggers));
+                logger = makeTeeLogger(std::unique_ptr<Logger>(logger), std::move(loggers)).release();
             } catch (...) {
                 // `logger` is now gone so give up.
                 abort();

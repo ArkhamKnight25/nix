@@ -277,6 +277,8 @@ EvalState::EvalState(
            mounted fetchTree. */
         auto accessor = settings.pureEval ? storeFS.cast<SourceAccessor>()
                                           : makeUnionSourceAccessor({getFSSourceAccessor(), storeFS});
+        /* Cache positive lstat/readlink results to speed up resolveSymlinks. */
+        accessor = makeCachingSourceAccessor(accessor);
 
         /* Apply access control if needed. */
         if (settings.restrictEval || settings.pureEval)
@@ -294,6 +296,10 @@ EvalState::EvalState(
     , derivationInternal{internalFS->addFile(
           CanonPath("derivation-internal.nix"),
 #include "primops/derivation.nix.gen.hh"
+          )}
+    , importedDrvToDerivation{internalFS->addFile(
+          CanonPath("imported-drv-to-derivation.nix"),
+#include "imported-drv-to-derivation.nix.gen.hh"
           )}
     , store(store)
     , buildStore(buildStore ? buildStore : store)
@@ -1171,7 +1177,9 @@ void EvalState::resetFileCache()
     importResolutionCache->clear();
     fileEvalCache->clear();
     inputCache->clear();
+    lookupPathResolved->clear();
     positions.clear();
+    rootFS->invalidateCache();
 }
 
 void EvalState::eval(Expr * e, Value & v)
@@ -2583,7 +2591,7 @@ StorePath EvalState::copyPathToStore(NixStringContext & context, const SourcePat
             fetchSettings,
             *store,
             path.resolveSymlinks(SymlinkResolution::Ancestors),
-            settings.readOnlyMode ? FetchMode::DryRun : FetchMode::Copy,
+            settings.isReadOnly() ? FetchMode::DryRun : FetchMode::Copy,
             path.baseName(),
             ContentAddressMethod::Raw::NixArchive,
             nullptr,
@@ -3266,14 +3274,28 @@ SourcePath EvalState::findFile(const LookupPath & lookupPath, const std::string_
             continue;
         auto r = *rOpt;
 
-        auto res = (r / CanonPath(suffix)).resolveSymlinks();
-        if (res.pathExists())
+        auto suffixPath = CanonPath(suffix);
+        if (auto cachedRes = getConcurrent(*rOpt->resolvedPaths, suffixPath)) {
+            if (*cachedRes)
+                return **cachedRes;
+            else
+                // Cached negative lookup.
+                continue;
+        }
+
+        auto res = (r.path / suffixPath).resolveSymlinks();
+        if (res.pathExists()) {
+            r.resolvedPaths->emplace(suffixPath, res);
             return res;
+        }
 
         // Backward compatibility hack: throw an exception if access
         // to this path is not allowed.
         if (auto accessor = res.accessor.dynamic_pointer_cast<FilteringSourceAccessor>())
             accessor->checkAccess(res.path);
+
+        // Cache negative lookups too.
+        r.resolvedPaths->emplace(suffixPath, std::nullopt);
     }
 
     if (hasPrefix(path, "nix/"))
@@ -3287,17 +3309,22 @@ SourcePath EvalState::findFile(const LookupPath & lookupPath, const std::string_
         .debugThrow();
 }
 
-std::optional<SourcePath> EvalState::resolveLookupPathPath(const LookupPath::Path & value0, bool initAccessControl)
+std::shared_ptr<EvalState::LookupPathResolvedState>
+EvalState::resolveLookupPathPath(const LookupPath::Path & value0, bool initAccessControl)
 {
     auto & value = value0.s;
     if (auto cached = getConcurrent(*lookupPathResolved, value))
         return *cached;
 
-    auto finish = [&](std::optional<SourcePath> res) {
-        if (res)
-            debug("resolved search path element '%s' to '%s'", value, *res);
-        else
+    auto finish = [&](std::optional<SourcePath> maybePath) {
+        std::shared_ptr<LookupPathResolvedState> res;
+        if (maybePath) {
+            debug("resolved search path element '%s' to '%s'", value, *maybePath);
+            res = std::make_shared<LookupPathResolvedState>(
+                *maybePath, make_ref<decltype(LookupPathResolvedState::resolvedPaths)::element_type>());
+        } else {
             debug("failed to resolve search path element '%s'", value);
+        }
         lookupPathResolved->emplace(std::string(value), res);
         return res;
     };
@@ -3442,7 +3469,7 @@ void forceNoNullByte(std::string_view s, std::function<Pos()> pos)
         if (pos) {
             error.atPos(pos());
         }
-        throw error;
+        throw std::move(error);
     }
 }
 
