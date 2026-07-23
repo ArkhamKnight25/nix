@@ -8,7 +8,7 @@
 #include "nix/expr/attr-path.hh"
 #include "nix/expr/eval-inline.hh"
 #include "nix/cmd/legacy.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 #include "nix/util/environment-variables.hh"
 #include "nix/util/url.hh"
@@ -205,7 +205,7 @@ static int main_nix_prefetch_url(int argc, char ** argv)
         auto store = openStore();
         auto state = std::make_shared<EvalState>(myArgs.lookupPath, store, fetchSettings, evalSettings);
 
-        Bindings & autoArgs = *myArgs.getAutoArgs(*state);
+        const Bindings & autoArgs = *myArgs.getAutoArgs(*state);
 
         /* If -A is given, get the URL from the specified Nix
            expression. */

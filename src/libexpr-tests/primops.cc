@@ -4,47 +4,10 @@
 #include "nix/expr/eval-settings.hh"
 #include "nix/util/memory-source-accessor.hh"
 
+#include "nix/util/tests/capture-logging.hh"
 #include "nix/expr/tests/libexpr.hh"
 
 namespace nix {
-class CaptureLogger : public Logger
-{
-    std::ostringstream oss;
-
-public:
-    CaptureLogger() {}
-
-    std::string get() const
-    {
-        return oss.str();
-    }
-
-    void log(Verbosity lvl, std::string_view s) override
-    {
-        oss << s << std::endl;
-    }
-
-    void logEI(const ErrorInfo & ei) override
-    {
-        showErrorInfo(oss, ei, loggerSettings.showTrace.get());
-    }
-};
-
-class CaptureLogging
-{
-    std::unique_ptr<Logger> oldLogger;
-public:
-    CaptureLogging()
-    {
-        oldLogger = std::move(logger);
-        logger = std::make_unique<CaptureLogger>();
-    }
-
-    ~CaptureLogging()
-    {
-        logger = std::move(oldLogger);
-    }
-};
 
 // Testing eval of PrimOp's
 class PrimOpTest : public LibExprTest
@@ -141,11 +104,10 @@ TEST_F(PrimOpTest, deepSeq)
 
 TEST_F(PrimOpTest, trace)
 {
-    CaptureLogging l;
+    testing::CaptureLogging l;
     auto v = eval("builtins.trace \"test string 123\" 123");
     ASSERT_THAT(v, IsIntEq(123));
-    auto text = (dynamic_cast<CaptureLogger *>(logger.get()))->get();
-    ASSERT_NE(text.find("test string 123"), std::string::npos);
+    ASSERT_THAT(l.get(), ::testing::HasSubstr("test string 123"));
 }
 
 TEST_F(PrimOpTest, placeholder)

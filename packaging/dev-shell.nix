@@ -127,7 +127,6 @@ nixComponents.callPackage (
           rest = builtins.substring 2 (builtins.stringLength flag) flag;
         in
         "-D${prefix}:${rest}";
-      havePerl = stdenv.buildPlatform == stdenv.hostPlatform && stdenv.hostPlatform.isUnix;
       ignoreCrossFile = flags: builtins.filter (flag: !(lib.strings.hasInfix "cross-file" flag)) flags;
 
       availableComponents = lib.filterAttrs (
@@ -170,12 +169,7 @@ nixComponents.callPackage (
         # perhaps other things that are primarily for overriding and not the shell.
         config = {
           # Default getComponents
-          getComponents =
-            c:
-            builtins.removeAttrs c (
-              lib.optionals (!havePerl) [ "nix-perl-bindings" ]
-              ++ lib.optionals (!buildCanExecuteHost) [ "nix-manual" ]
-            );
+          getComponents = c: builtins.removeAttrs c (lib.optionals (!buildCanExecuteHost) [ "nix-manual" ]);
         };
 
         /**
@@ -211,7 +205,6 @@ nixComponents.callPackage (
             "nix-fetchers-tests"
             "nix-flake-tests"
             "nix-functional-tests"
-            "nix-perl-bindings"
           ] (_: null)) c
         );
       };
@@ -287,11 +280,14 @@ nixComponents.callPackage (
       ++ map (transformFlag "libutil") (ignoreCrossFile nixComponents.nix-util.mesonFlags)
       ++ map (transformFlag "libstore") (ignoreCrossFile nixComponents.nix-store.mesonFlags)
       ++ map (transformFlag "libfetchers") (ignoreCrossFile nixComponents.nix-fetchers.mesonFlags)
-      ++ lib.optionals havePerl (
-        map (transformFlag "perl") (ignoreCrossFile nixComponents.nix-perl-bindings.mesonFlags)
-      )
       ++ map (transformFlag "libexpr") (ignoreCrossFile nixComponents.nix-expr.mesonFlags)
       ++ map (transformFlag "libcmd") (ignoreCrossFile nixComponents.nix-cmd.mesonFlags)
+      ++ map (transformFlag "libutil-c") (ignoreCrossFile nixComponents.nix-util-c.mesonFlags)
+      ++ map (transformFlag "libstore-c") (ignoreCrossFile nixComponents.nix-store-c.mesonFlags)
+      ++ map (transformFlag "libfetchers-c") (ignoreCrossFile nixComponents.nix-fetchers-c.mesonFlags)
+      ++ map (transformFlag "libexpr-c") (ignoreCrossFile nixComponents.nix-expr-c.mesonFlags)
+      ++ map (transformFlag "libflake-c") (ignoreCrossFile nixComponents.nix-flake-c.mesonFlags)
+      ++ map (transformFlag "libmain-c") (ignoreCrossFile nixComponents.nix-main-c.mesonFlags)
       ++ map (transformFlag "nix") (ignoreCrossFile nixComponents.nix-cli.mesonFlags);
 
       nativeBuildInputs =
@@ -320,7 +316,7 @@ nixComponents.callPackage (
               pkgs.buildPackages.gnused
               modular.pre-commit.settings.package
               (pkgs.writeScriptBin "pre-commit-hooks-install" modular.pre-commit.settings.installationScript)
-              pkgs.buildPackages.nixfmt-rfc-style
+              pkgs.buildPackages.nixfmt
               pkgs.buildPackages.shellcheck
               pkgs.buildPackages.include-what-you-use
             ]
@@ -328,7 +324,7 @@ nixComponents.callPackage (
             ++ lib.optional (stdenv.cc.isClang && stdenv.hostPlatform == stdenv.buildPlatform) (
               lib.hiPrio pkgs.buildPackages.clang-tools
             )
-            ++ lib.optional stdenv.hostPlatform.isLinux pkgs.buildPackages.mold-wrapped;
+            ++ lib.optional stdenv.hostPlatform.isLinux pkgs.buildPackages.mold;
         in
         # FIXME: separateDebugInfo = false doesn't actually prevent -Wa,--compress-debug-sections
         # from making its way into NIX_CFLAGS_COMPILE.
@@ -345,8 +341,7 @@ nixComponents.callPackage (
         lib.optional stdenv.hostPlatform.isUnix pkgs.gbenchmark
         ++ dedupByString (v: "${v}") (
           lib.filter (x: !isInternal x) (lib.lists.concatMap (c: c.buildInputs) activeComponents)
-        )
-        ++ lib.optional havePerl pkgs.perl;
+        );
 
       propagatedBuildInputs = dedupByString (v: "${v}") (
         lib.filter (x: !isInternal x) (lib.lists.concatMap (c: c.propagatedBuildInputs) activeComponents)

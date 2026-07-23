@@ -43,6 +43,10 @@ public:
 
 struct EvalSettings : Config
 {
+private:
+    void anchor() override;
+
+public:
     /**
      * Function used to interpret look path entries of a given scheme.
      *
@@ -71,7 +75,14 @@ struct EvalSettings : Config
 
     EvalSettings(bool & readOnlyMode, LookupPathHooks lookupPathHooks = {});
 
-    bool & readOnlyMode;
+    /* FIXME: This really shouldn't be public. The C API should have non-global settings instead. */
+    bool * readOnlyMode = nullptr;
+
+    bool isReadOnly() const
+    {
+        assert(readOnlyMode);
+        return *readOnlyMode;
+    }
 
     static Strings getDefaultNixPath();
 
@@ -191,6 +202,10 @@ struct EvalSettings : Config
             - [`builtins.currentTime`](@docroot@/language/builtins.md#builtins-currentTime)
             - [`builtins.nixPath`](@docroot@/language/builtins.md#builtins-nixPath)
             - [`builtins.storePath`](@docroot@/language/builtins.md#builtins-storePath)
+
+          As a result, every fetch must be a []{#pure-fetch}*pure fetch* — one that references immutable content:
+          [`fetchTree`](@docroot@/language/builtins.md#builtins-fetchTree) and [`fetchGit`](@docroot@/language/builtins.md#builtins-fetchGit) require a locked revision, and [`fetchTarball`](@docroot@/language/builtins.md#builtins-fetchTarball) and [`fetchurl`](@docroot@/language/builtins.md#builtins-fetchurl) require a `sha256` hash.
+          A mutable reference, such as a Git branch or tag without a revision, is rejected, since its result could otherwise change over time.
         )"};
 
     Setting<bool> traceImportFromDerivation{

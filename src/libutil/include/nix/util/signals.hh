@@ -43,10 +43,11 @@ inline void checkInterrupt();
  * @note Never will happen on Windows
  */
 MakeError(Interrupted, BaseError);
+MakeError(Cancelled, BaseError);
 
 struct InterruptCallback
 {
-    virtual ~InterruptCallback() {};
+    virtual ~InterruptCallback();
 };
 
 /**

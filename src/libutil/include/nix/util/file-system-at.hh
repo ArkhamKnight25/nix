@@ -22,6 +22,12 @@
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
+#elif defined(__FreeBSD__)
+// FreeBSD openat(..., AT_NOFOLLOW) on a symlink returns
+// `EMLINK`, not the posix-specified `ELOOP`.
+#  define NIX_ERR_OPEN_SYMLINK EMLINK
+#else
+#  define NIX_ERR_OPEN_SYMLINK ELOOP
 #endif
 
 namespace nix {
@@ -65,6 +71,7 @@ PosixStat fstatat(Descriptor dirFd, const std::filesystem::path & path);
 
 /**
  * Read a symlink relative to a directory file descriptor.
+ * On Linux, this also supports reading from O_PATH descriptors with CanonPath::root.
  *
  * @throws SystemError on any I/O errors.
  * @throws Interrupted if interrupted.
@@ -89,6 +96,8 @@ OsString readLinkAt(Descriptor dirFd, const CanonPath & path);
  *
  * @param flags (Unix) `O_*` flags (must not include `O_NOFOLLOW`)
  * @param mode (Unix) Mode for `O_{CREAT,TMPFILE}`
+ *
+ * @param dirFdCallback Callback invoked that gets the ownership of an intermediate directory fd.
  *
  * @pre `path.isRoot()` is false
  *
@@ -118,12 +127,12 @@ AutoCloseFD openFileEnsureBeneathNoSymlinks(
 #ifdef _WIN32
     ACCESS_MASK desiredAccess,
     ULONG createOptions,
-    ULONG createDisposition = FILE_OPEN
+    ULONG createDisposition = FILE_OPEN,
 #else
     int flags,
-    mode_t mode = 0
+    mode_t mode = 0,
 #endif
-);
+    std::function<void(AutoCloseFD dirFd, CanonPath relPath)> dirFdCallback = nullptr);
 
 #ifdef __linux__
 namespace linux {

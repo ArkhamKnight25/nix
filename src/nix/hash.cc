@@ -4,7 +4,7 @@
 #include "nix/main/shared.hh"
 #include "nix/store/references.hh"
 #include "nix/util/git.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 #include "man-pages.hh"
 #include "nix/util/fun.hh"
@@ -84,9 +84,7 @@ struct CmdHashBase : Command
                     return std::make_unique<HashSink>(hashAlgo);
             };
 
-            auto makeSourcePath = [&]() -> SourcePath {
-                return PosixSourceAccessor::createAtRoot(makeParentCanonical(path));
-            };
+            auto makeSourcePath = [&]() -> SourcePath { return makeFSSourceAccessor(absPath(path)); };
 
             Hash h{HashAlgorithm::SHA256}; // throwaway def to appease C++
             switch (mode) {

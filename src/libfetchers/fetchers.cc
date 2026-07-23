@@ -1,13 +1,18 @@
 #include "nix/fetchers/fetchers.hh"
 #include "nix/store/store-api.hh"
 #include "nix/util/fs-sink.hh"
+#include "nix/store/build.hh"
 #include "nix/util/source-path.hh"
 #include "nix/fetchers/fetch-to-store.hh"
 #include "nix/util/json-utils.hh"
 #include "nix/fetchers/fetch-settings.hh"
 #include "nix/fetchers/fetch-to-store.hh"
 #include "nix/util/url.hh"
+#include "nix/util/users.hh"
+#include "nix/store/pathlocks.hh"
+#include "nix/util/environment-variables.hh"
 
+#include <thread>
 #include <nlohmann/json.hpp>
 
 namespace nix::fetchers {
@@ -121,6 +126,9 @@ std::optional<std::string> Input::getFingerprint(Store & store) const
 
     auto fingerprint = scheme->getFingerprint(store, *this);
 
+    if (fingerprint)
+        fingerprint = std::string(scheme->schemeName()) + ":" + *fingerprint;
+
     cachedFingerprint = fingerprint;
 
     return fingerprint;
@@ -163,8 +171,7 @@ bool Input::isFinal() const
 
 std::optional<std::filesystem::path> Input::isRelative() const
 {
-    assert(scheme);
-    return scheme->isRelative(*this);
+    return scheme ? scheme->isRelative(*this) : std::nullopt;
 }
 
 Attrs Input::toAttrs() const
@@ -316,7 +323,9 @@ std::pair<ref<SourceAccessor>, Input> Input::getAccessorUnchecked(const Settings
         try {
             auto storePath = computeStorePath(store);
 
-            store.ensurePath(storePath);
+            store.addTempRoot(storePath);
+
+            store.getBuilder()->ensurePath(storePath);
 
             debug("using substituted/cached input '%s' in '%s'", to_string(), store.printStorePath(storePath));
 
@@ -342,6 +351,21 @@ std::pair<ref<SourceAccessor>, Input> Input::getAccessorUnchecked(const Settings
         }
     }
 
+    /* Acquire a path lock on this input. Note that fetching the same input in parallel is supposed to be safe (it's up
+     * to the fetchers to guarantee this), so this is merely intended to avoid work duplication. Note that we don't need
+     * this when substituting the input. */
+    auto lockFilePath =
+        getCacheDir() / "fetcher-locks"
+        / hashString(HashAlgorithm::SHA256, attrsToJSON(toAttrs()).dump()).to_string(HashFormat::Base16, false);
+    createDirs(lockFilePath.parent_path());
+    PathLocks lock(
+        {lockFilePath.string()}, fmt("waiting for another Nix process to finish fetching input '%s'...", to_string()));
+    lock.setDeletion(true);
+
+    static auto inTest = getEnv("_NIX_TEST_CONCURRENT_FETCHES") == "1";
+    if (inTest)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
     auto [accessor, result] = scheme->getAccessor(settings, store, *this);
 
     if (!accessor->fingerprint)
@@ -361,19 +385,20 @@ Input Input::applyOverrides(std::optional<std::string> ref, std::optional<Hash> 
 
 void Input::clone(const Settings & settings, Store & store, const std::filesystem::path & destDir) const
 {
-    assert(scheme);
+    if (!scheme)
+        throw Error("cannot clone unsupported input '%s'", attrsToJSON(attrs));
     scheme->clone(settings, store, *this, destDir);
 }
 
 std::optional<std::filesystem::path> Input::getSourcePath() const
 {
-    assert(scheme);
-    return scheme->getSourcePath(*this);
+    return scheme ? scheme->getSourcePath(*this) : std::nullopt;
 }
 
 void Input::putFile(const CanonPath & path, std::string_view contents, std::optional<std::string> commitMsg) const
 {
-    assert(scheme);
+    if (!scheme)
+        throw Error("unsupported input '%s' does not support modifying file '%s'", attrsToJSON(attrs), path);
     return scheme->putFile(*this, path, contents, commitMsg);
 }
 
@@ -504,12 +529,11 @@ std::string publicKeys_to_string(const std::vector<PublicKey> & publicKeys)
 
 namespace nlohmann {
 
-using namespace nix;
-
 #ifndef DOXYGEN_SKIP
 
-fetchers::PublicKey adl_serializer<fetchers::PublicKey>::from_json(const json & json)
+nix::fetchers::PublicKey adl_serializer<nix::fetchers::PublicKey>::from_json(const json & json)
 {
+    using namespace nix;
     fetchers::PublicKey res = {};
     auto & obj = getObject(json);
     if (auto * type = optionalValueAt(obj, "type"))
@@ -520,7 +544,7 @@ fetchers::PublicKey adl_serializer<fetchers::PublicKey>::from_json(const json & 
     return res;
 }
 
-void adl_serializer<fetchers::PublicKey>::to_json(json & json, const fetchers::PublicKey & p)
+void adl_serializer<nix::fetchers::PublicKey>::to_json(json & json, const nix::fetchers::PublicKey & p)
 {
     json["type"] = p.type;
     json["key"] = p.key;

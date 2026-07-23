@@ -5,9 +5,15 @@
 #include "nix/util/sync.hh"
 #include "nix/util/terminal.hh"
 
+#include "unix/signals-private.hh"
+
 #include <thread>
 
 namespace nix {
+
+void Interrupted::anchor() {}
+
+void Cancelled::anchor() {}
 
 std::atomic<bool> unix::_isInterrupted = false;
 
@@ -40,6 +46,8 @@ struct InterruptCallbacks
     /* Used as a list, see InterruptCallbacks comment. */
     std::map<Token, fun<void()>> callbacks;
 };
+
+InterruptCallback::~InterruptCallback() {}
 
 /* Required to avoid static initialization order fiasco. This allows global
    objects to safely register callbacks. */
@@ -95,8 +103,8 @@ void unix::triggerInterrupt()
     }
 }
 
-static sigset_t savedSignalMask;
-static bool savedSignalMaskIsSet = false;
+sigset_t unix::savedSignalMask;
+bool unix::savedSignalMaskIsSet = false;
 
 void unix::saveSignalMask()
 {
@@ -145,6 +153,8 @@ void unix::restoreSignals()
         throw SysError("restoring signals");
 }
 
+namespace {
+
 /* RAII helper to automatically deregister a callback. */
 struct InterruptCallbackImpl : InterruptCallback
 {
@@ -166,6 +176,8 @@ struct InterruptCallbackImpl : InterruptCallback
         interruptCallbacks->callbacks.erase(token);
     }
 };
+
+} // namespace
 
 std::unique_ptr<InterruptCallback> createInterruptCallback(fun<void()> callback)
 {

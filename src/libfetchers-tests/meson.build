@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -33,6 +33,9 @@ deps_private += rapidcheck
 gtest = dependency('gtest', main : true)
 deps_private += gtest
 
+gmock = dependency('gmock')
+deps_private += gmock
+
 libgit2 = dependency('libgit2')
 deps_private += libgit2
 
@@ -40,6 +43,8 @@ subdir('nix-meson-build-support/common')
 
 sources = files(
   'access-tokens.cc',
+  'attrs.cc',
+  'git-lfs-fetch.cc',
   'git-utils.cc',
   'git.cc',
   'input.cc',

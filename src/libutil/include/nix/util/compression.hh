@@ -10,16 +10,19 @@
 
 namespace nix {
 
-struct CompressionSink : BufferedSink, FinishSink
+class CompressionSink : public BufferedSink, public FinishSink
 {
+    void anchor() override;
+
+public:
     using BufferedSink::operator();
     using BufferedSink::writeUnbuffered;
     using FinishSink::finish;
 };
 
-std::string decompress(const std::string & method, std::string_view in);
+std::string decompress(CompressionAlgo method, std::string_view in);
 
-std::unique_ptr<FinishSink> makeDecompressionSink(const std::string & method, Sink & nextSink);
+std::unique_ptr<FinishSink> makeDecompressionSink(CompressionAlgo method, Sink & nextSink);
 
 std::string compress(CompressionAlgo method, std::string_view in, const bool parallel = false, int level = -1);
 

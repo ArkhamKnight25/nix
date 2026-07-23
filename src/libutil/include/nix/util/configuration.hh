@@ -52,6 +52,11 @@ class AbstractSetting;
 
 class AbstractConfig
 {
+private:
+    /* VTable anchor to avoid weak linkage of the vtable - it breaks
+       dynamic_cast across shared libraries on Darwin. */
+    virtual void anchor();
+
 protected:
     StringMap unknownSettings;
 
@@ -140,6 +145,8 @@ public:
 class Config : public AbstractConfig
 {
     friend class AbstractSetting;
+
+    void anchor() override;
 
 public:
 
@@ -510,6 +517,9 @@ public:
         options->addSetting(this);
     }
 
+    /* To appease -Wweak-vtables. */
+    ~Setting() override;
+
     void operator=(const AbsolutePath & v)
     {
         this->assign(v);
@@ -540,7 +550,10 @@ void BaseSetting<std::set<std::filesystem::path>>::appendOrSet(std::set<std::fil
 
 struct ExperimentalFeatureSettings : Config
 {
+private:
+    void anchor() override;
 
+public:
     Setting<std::set<ExperimentalFeature>> experimentalFeatures{
         this,
         {},
@@ -578,7 +591,7 @@ struct ExperimentalFeatureSettings : Config
      */
     template<typename GetReason>
         requires std::invocable<GetReason> && std::convertible_to<std::invoke_result_t<GetReason>, std::string>
-    void require(const ExperimentalFeature & feature, GetReason && getReason) const
+    void require(const ExperimentalFeature & feature, const GetReason & getReason) const
     {
         if (isEnabled(feature))
             return;

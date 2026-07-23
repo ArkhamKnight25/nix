@@ -7,10 +7,7 @@ source common.sh
 # shellcheck disable=SC1111
 needLocalStore "“--no-require-sigs” can’t be used with the daemon"
 
-rm -rf "$TEST_ROOT/binary_cache"
-
-export REMOTE_STORE_DIR=$TEST_ROOT/binary_cache
-export REMOTE_STORE=file://$REMOTE_STORE_DIR
+export REMOTE_STORE="file://$cacheDir"
 
 buildDrvs () {
     nix build --file ./content-addressed.nix -L --no-link "$@"
@@ -26,9 +23,10 @@ clearStore
 # this. Force the use of small-step resolutions only to allow not
 # mentioning it explicitly again. (#11896, #11928).
 buildDrvs --substitute --substituters "$REMOTE_STORE" --no-require-sigs -j0 transitivelyDependentCA dependentCA
-# Check that the thing we’ve just substituted has its realisation stored
-nix realisation info --file ./content-addressed.nix transitivelyDependentCA
+# Check that the thing we’ve just substituted has its build trace stored
+nix store build-trace info --file ./content-addressed.nix transitivelyDependentCA
 # Check that its dependencies have it too
+# Use the old command to make sure that the alias works
 nix realisation info --file ./content-addressed.nix dependentCA
 # nix realisation info --file ./content-addressed.nix rootCA --outputs out
 
@@ -48,5 +46,5 @@ buildDrvs --substitute --substituters "$REMOTE_STORE" --no-require-sigs -j0
 # Try rebuilding, but remove the realisations from the remote cache to force
 # using the cachecache
 clearStore
-rm -r "$REMOTE_STORE_DIR"/build-trace-v2/*
+rm -r "$cacheDir"/build-trace-v2/*
 buildDrvs --substitute --substituters "$REMOTE_STORE" --no-require-sigs -j0

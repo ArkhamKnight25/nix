@@ -9,6 +9,7 @@ namespace nix {
 struct CmdStoreDelete : StorePathsCommand
 {
     GCOptions options{.action = GCOptions::gcDeleteSpecific};
+    bool deleteReferrers = false;
 
     CmdStoreDelete()
     {
@@ -20,9 +21,16 @@ struct CmdStoreDelete : StorePathsCommand
 
         addFlag({
             .longName = "skip-alive",
+            .aliases = {"skip-live"},
             .description =
                 "Do not emit errors when attempting to delete something that is still alive, useful with --recursive.",
             .handler = {&options.action, GCOptions::gcDeleteDead},
+        });
+
+        addFlag({
+            .longName = "also-referrers",
+            .description = "Also allow deletion of any referrers of the specified paths.",
+            .handler = {&deleteReferrers, true},
         });
     }
 
@@ -45,7 +53,10 @@ struct CmdStoreDelete : StorePathsCommand
         StorePathSet paths;
         for (auto & path : storePaths)
             paths.insert(path);
-        options.pathsToDelete = std::move(paths);
+        options.pathsToDelete = GCOptions::SpecificPaths{
+            .paths = std::move(paths),
+            .deleteReferrers = deleteReferrers,
+        };
 
         GCResults results;
         Finally printer([&] { printFreed(false, results); });

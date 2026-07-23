@@ -139,8 +139,6 @@ let
             !(stdenv.hostPlatform.isWindows || stdenv.hostPlatform.isCygwin)
             # build failure
             && !stdenv.hostPlatform.isStatic
-            # LTO breaks exception handling on x86-64-darwin.
-            && stdenv.system != "x86_64-darwin"
           )
           ''
             case "$mesonBuildType" in
@@ -332,6 +330,11 @@ in
   withUnityBuild = true;
 
   /**
+    Whether to embed the public C API into nix-cli so plugins can resolve those symbols from the executable.
+  */
+  withPluginCAPI = !(stdenv.hostPlatform.isWindows || stdenv.hostPlatform.isStatic);
+
+  /**
     A user-provided extension function to apply to each component derivation.
   */
   mesonComponentOverrides = finalAttrs: prevAttrs: { };
@@ -479,7 +482,9 @@ in
   /**
     The Nix command line interface. Note that this does not include its tests, whereas `nix-everything` does.
   */
-  nix-cli = callPackage ../src/nix/package.nix { version = fineVersion; };
+  nix-cli = callPackage ../src/nix/package.nix {
+    version = fineVersion;
+  };
 
   nix-functional-tests = callPackage ../tests/functional/package.nix {
     version = fineVersion;
@@ -511,8 +516,6 @@ in
     JSON schema validation checks
   */
   nix-json-schema-checks = callPackage ../src/json-schema-checks/package.nix { };
-
-  nix-perl-bindings = callPackage ../src/perl/package.nix { };
 
   # The clang-tidy plugin is a build-time tool loaded into clang-tidy itself,
   # so it must be built with a clang stdenv for ABI compatibility with the

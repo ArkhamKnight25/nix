@@ -21,6 +21,7 @@
 #include "nix/util/strings.hh"
 #include "nix/store/derivations.hh"
 #include "nix/store/local-store.hh"
+#include "nix/store/build.hh"
 #include "nix/cmd/legacy.hh"
 #include "nix/util/experimental-features.hh"
 #include "nix/store/globals.hh"
@@ -70,7 +71,7 @@ static int main_build_remote(int argc, char ** argv)
         if (pthread_sigmask(SIG_UNBLOCK, &set, nullptr))
             throw SysError("unblocking SIGTERM");
 
-        logger = makeJSONLogger(getStandardError());
+        logger = makeJSONLogger(getStandardError()).release();
 
         /* Ensure we don't get any SSH passphrase or host key popups. */
         unsetenv("DISPLAY");
@@ -300,14 +301,9 @@ static int main_build_remote(int argc, char ** argv)
             signal(SIGALRM, old);
         }
 
-        auto substitute = settings.getWorkerSettings().buildersUseSubstitutes ? Substitute : NoSubstitute;
-
-        {
-            Activity act(*logger, lvlTalkative, actUnknown, fmt("copying dependencies to '%s'", storeUri));
-            copyPaths(*store, *sshStore, store->parseStorePathSet(inputs), NoRepair, NoCheckSigs, substitute);
-        }
-
         uploadLock = -1;
+
+        auto inputPaths = store->parseStorePathSet(inputs);
 
         auto drv = store->readDerivation(*drvPath);
 
@@ -327,18 +323,26 @@ static int main_build_remote(int argc, char ** argv)
         // This condition mirrors that: that code enforces the "rules" outlined there;
         // we do the best we can given those "rules".
         if (trustedOrLegacy || drv.type().isCA()) {
-            // Hijack the inputs paths of the derivation to include all
-            // the paths that come from the `inputDrvs` set. We don’t do
-            // that for the derivations whose `inputDrvs` is empty
-            // because:
-            //
-            // 1. It’s not needed
-            //
-            // 2. Changing the `inputSrcs` set changes the associated
-            //    output ids, which break CA derivations
-            if (!drv.inputDrvs.map.empty())
-                drv.inputSrcs = store->parseStorePathSet(inputs);
-            optResult = sshStore->buildDerivation(*drvPath, static_cast<const BasicDerivation &>(drv));
+            BasicDerivation resolvedDrv{
+                .outputs = drv.outputs,
+                // Hijack the inputs paths of the derivation to include
+                // all the paths that come from the `inputDrvs` set. We
+                // don’t do that for the derivations whose `inputDrvs`
+                // is empty because:
+                //
+                // 1. It’s not needed
+                //
+                // 2. Changing the `inputSrcs` set changes the
+                //    associated output ids, which break CA derivations
+                .inputs = drv.inputs.drvs.map.empty() ? drv.inputs.srcs : inputPaths,
+                .platform = drv.platform,
+                .builder = drv.builder,
+                .args = drv.args,
+                .env = drv.env,
+                .structuredAttrs = drv.structuredAttrs,
+                .name = drv.name,
+            };
+            optResult = sshStore->getBuilder()->buildDerivation(*drvPath, resolvedDrv, inputPaths);
             auto & result = *optResult;
             if (auto * failureP = result.tryGetFailure()) {
                 if (settings.keepFailed) {
@@ -352,11 +356,14 @@ static int main_build_remote(int argc, char ** argv)
                     "build of '%s' on '%s' failed: %s", store->printStorePath(*drvPath), storeUri, failureP->message());
             }
         } else {
-            copyClosure(*store, *sshStore, StorePathSet{*drvPath}, NoRepair, NoCheckSigs, substitute);
-            auto res = sshStore->buildPathsWithResults({DerivedPath::Built{
-                .drvPath = makeConstantStorePathRef(*drvPath),
-                .outputs = OutputsSpec::All{},
-            }});
+            auto inputPathsWithDrv = inputPaths;
+            store->computeFSClosure(*drvPath, inputPathsWithDrv);
+            auto res = sshStore->getBuilder()->buildPathsWithResults(
+                {DerivedPath::Built{
+                    .drvPath = makeConstantStorePathRef(*drvPath),
+                    .outputs = OutputsSpec::All{},
+                }},
+                inputPathsWithDrv);
             // One path to build should produce exactly one build result
             assert(res.size() == 1);
             optResult = std::move(res[0]);

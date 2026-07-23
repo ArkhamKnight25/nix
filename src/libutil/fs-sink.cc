@@ -14,6 +14,18 @@
 
 namespace nix {
 
+void FileSystemObjectSink::anchor() {}
+
+void ExtendedFileSystemObjectSink::anchor() {}
+
+void NullFileSystemObjectSink::anchor() {}
+
+void RegularFileSink::anchor() {}
+
+void RestoreSink::anchor() {}
+
+void CreateRegularFileSink::anchor() {}
+
 void copyRecursive(SourceAccessor & accessor, const CanonPath & from, FileSystemObjectSink & sink, const CanonPath & to)
 {
     auto stat = accessor.lstat(from);
@@ -34,10 +46,12 @@ void copyRecursive(SourceAccessor & accessor, const CanonPath & from, FileSystem
     }
 
     case SourceAccessor::tDirectory: {
-        sink.createDirectory(to, [&](FileSystemObjectSink & dirSink, const CanonPath & relDirPath) {
-            for (auto & [name, _] : accessor.readDirectory(from)) {
-                copyRecursive(accessor, from / name, dirSink, relDirPath / name);
-            }
+        sink.createDirectory(to, [&](FileSystemObjectSink & dirSink, const CanonPath & relDirPathTo) {
+            accessor.readDirectory(from, [&](SourceAccessor & subdirAccessor, const CanonPath & relDirPathFrom) {
+                for (auto & [name, _] : subdirAccessor.readDirectory(relDirPathFrom)) {
+                    copyRecursive(subdirAccessor, relDirPathFrom / name, dirSink, relDirPathTo / name);
+                }
+            });
         });
         break;
     }
@@ -52,6 +66,8 @@ void copyRecursive(SourceAccessor & accessor, const CanonPath & from, FileSystem
     }
 }
 
+namespace {
+
 struct RestoreSinkSettings : Config
 {
     Setting<bool> preallocateContents{
@@ -61,6 +77,8 @@ struct RestoreSinkSettings : Config
 static RestoreSinkSettings restoreSinkSettings;
 
 static GlobalConfig::Register r1(&restoreSinkSettings);
+
+} // namespace
 
 static std::filesystem::path append(const std::filesystem::path & src, const CanonPath & path)
 {
@@ -194,6 +212,8 @@ struct RestoreRegularFile : CreateRegularFileSink, FdSink
     {
     }
 
+    void anchor() override;
+
     ~RestoreRegularFile()
     {
         /* Flush the sink before FdSink destructor has a chance to run and we've
@@ -217,6 +237,8 @@ struct RestoreRegularFile : CreateRegularFileSink, FdSink
     void isExecutable() override;
     void preallocateContents(uint64_t size) override;
 };
+
+void RestoreRegularFile::anchor() {}
 
 void RestoreSink::createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func)
 {
@@ -265,6 +287,9 @@ void RestoreRegularFile::preallocateContents(uint64_t len)
 
 #if HAVE_POSIX_FALLOCATE
     if (len) {
+        if (len > std::numeric_limits<off_t>::max())
+            throw Error("cannot preallocate contents for a file because it's too large");
+
         errno = posix_fallocate(fd.get(), 0, len);
         /* Note that EINVAL may indicate that the underlying
            filesystem doesn't support preallocation (e.g. on

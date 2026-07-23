@@ -5,10 +5,6 @@ source common.sh
 # https://github.com/NixOS/nix/pull/14189
 requireDaemonNewerThan "2.33"
 
-clearStoreIfPossible
-
-rm -f "$TEST_ROOT"/result
-
 nix-build structured-attrs.nix -A all -o "$TEST_ROOT"/result
 
 [[ $(cat "$TEST_ROOT"/result/foo) = bar ]]
@@ -26,7 +22,7 @@ TODO_NixOS # following line fails.
 
 # `nix develop` is a slightly special way of dealing with environment vars, it parses
 # these from a shell-file exported from a derivation. This is to test especially `outputs`
-# (which is an associative array in thsi case) being fine.
+# (which is an associative array in this case) being fine.
 # shellcheck disable=SC2016
 nix develop -f structured-attrs-shell.nix -c bash -c 'test -n "$out"'
 
@@ -45,21 +41,23 @@ test "$(<<<"$jsonOut" jq '.variables.outputs.value.out' -r)" = "$(<<<"$jsonOut" 
 hackyExpr='derivation { name = "a"; system = "foo"; builder = "/bin/sh"; __json = builtins.toJSON { a = 1; }; }'
 
 # Check for deprecation message
-expectStderr 0 nix-instantiate --expr "$hackyExpr" --eval --strict | grepQuiet "In derivation 'a': setting structured attributes via '__json' is deprecated, and may be disallowed in future versions of Nix. Set '__structuredAttrs = true' instead."
+expectStderr 0 nix-instantiate --expr "$hackyExpr" --eval --strict | grepQuiet "setting structured attributes via '__json' is deprecated, and may be disallowed in future versions of Nix. Set '__structuredAttrs = true' instead."
 
 # Check it works with the expected structured attrs
 hacky=$(nix-instantiate --expr "$hackyExpr")
 nix derivation show "$hacky" | jq --exit-status '.derivations."'"$(basename "$hacky")"'".structuredAttrs | . == {"a": 1}'
 
-# Test warning for non-object exportReferencesGraph in structured attrs
-# shellcheck disable=SC2016
-expectStderr 0 nix-build --no-out-link --expr '
-  with import ./config.nix;
-  mkDerivation {
-    name = "export-graph-non-object";
-    __structuredAttrs = true;
-    exportReferencesGraph = [ "foo" "bar" ];
-    builder = "/bin/sh";
-    args = ["-c" "echo foo > ${builtins.placeholder "out"}"];
-  }
-' | grepQuiet "warning:.*exportReferencesGraph.*not a JSON object"
+if isDaemonNewer "2.34pre"; then
+    # Test warning for non-object exportReferencesGraph in structured attrs
+    # shellcheck disable=SC2016
+    expectStderr 0 nix-build --no-out-link --expr '
+    with import ./config.nix;
+    mkDerivation {
+        name = "export-graph-non-object";
+        __structuredAttrs = true;
+        exportReferencesGraph = [ "foo" "bar" ];
+        builder = "/bin/sh";
+        args = ["-c" "echo foo > ${builtins.placeholder "out"}"];
+    }
+    ' | grepQuiet "warning:.*exportReferencesGraph.*not a JSON object"
+fi

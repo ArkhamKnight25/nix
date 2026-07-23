@@ -11,9 +11,9 @@
 #include <ranges>
 #include <string_view>
 
-using namespace std::string_view_literals;
-
 namespace nix {
+
+void InvalidS3AddressingStyle::anchor() {}
 
 S3AddressingStyle parseS3AddressingStyle(std::string_view style)
 {
@@ -41,6 +41,8 @@ std::string_view showS3AddressingStyle(S3AddressingStyle style)
 
 ParsedS3URL ParsedS3URL::parse(const ParsedURL & parsed)
 try {
+    using namespace std::string_view_literals;
+
     if (parsed.scheme != "s3"sv)
         throw BadURL("URI scheme '%s' is not 's3'", parsed.scheme);
 

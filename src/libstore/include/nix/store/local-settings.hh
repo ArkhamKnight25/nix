@@ -39,6 +39,10 @@ void BaseSetting<PathsInChroot>::appendOrSet(PathsInChroot newValue, bool append
 
 struct GCSettings : public virtual Config
 {
+private:
+    void anchor() override;
+
+public:
     Setting<off_t> reservedSize{
         this,
         8 * 1024 * 1024,
@@ -61,6 +65,9 @@ struct GCSettings : public virtual Config
           collector still deletes store paths that are used only at build
           time (e.g., the C compiler, or source tarballs downloaded from the
           network). To prevent it from doing so, set this option to `true`.
+
+          This option only applies to garbage collection of the whole store
+          and does not affect deleting explicit paths.
         )",
         {"gc-keep-outputs"},
     };
@@ -80,6 +87,9 @@ struct GCSettings : public virtual Config
           store path was built), so by default this option is on. Turn it off
           to save a bit of disk space (or a lot if `keep-outputs` is also
           turned on).
+
+          This option only applies to garbage collection of the whole store
+          and does not affect deleting explicit paths.
         )",
         {"gc-keep-derivations"},
     };
@@ -128,6 +138,10 @@ const uint32_t maxIdsPerBuild =
 
 struct AutoAllocateUidSettings : public virtual Config
 {
+private:
+    void anchor() override;
+
+public:
     Setting<uint32_t> startId{
         this,
 #ifdef __linux__
@@ -163,6 +177,10 @@ struct AutoAllocateUidSettings : public virtual Config
  */
 struct LocalSettings : public virtual Config, public GCSettings, public AutoAllocateUidSettings
 {
+private:
+    void anchor() override;
+
+public:
     /**
      * Get the GC settings.
      */
@@ -190,7 +208,7 @@ struct LocalSettings : public virtual Config, public GCSettings, public AutoAllo
         0,
         "cores",
         R"(
-          Sets the value of the `NIX_BUILD_CORES` environment variable in the [invocation of the `builder` executable](@docroot@/store/building.md#builder-execution) of a derivation.
+          Sets the value of the `NIX_BUILD_CORES` environment variable in the [invocation of the `builder` executable](@docroot@/store/building.md#env-vars) of a derivation.
           The `builder` executable can use this variable to control its own maximum amount of parallelism.
 
           <!--
@@ -718,7 +736,7 @@ public:
      * Finds the first external derivation builder that supports this
      * derivation, or else returns a null pointer.
      */
-    const ExternalBuilder * findExternalDerivationBuilderIfSupported(const Derivation & drv);
+    const ExternalBuilder * findExternalDerivationBuilderIfSupported(const BasicDerivation & drv);
 };
 
 template<>

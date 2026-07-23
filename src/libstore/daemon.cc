@@ -1,8 +1,11 @@
 #include "nix/store/daemon.hh"
+#include "nix/util/configuration.hh"
+#include "nix/util/file-content-address.hh"
 #include "nix/util/signals.hh"
 #include "nix/store/worker-protocol.hh"
 #include "nix/store/worker-protocol-connection.hh"
 #include "nix/store/worker-protocol-impl.hh"
+#include "nix/store/build.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/store-cast.hh"
 #include "nix/store/filetransfer.hh"
@@ -41,6 +44,8 @@ Sink & operator<<(Sink & sink, const Logger::Fields & fields)
     }
     return sink;
 }
+
+namespace {
 
 /* Logger that forwards log messages to the client, *if* we're in a
    state where the protocol allows it (i.e., when canSendStderr is
@@ -179,22 +184,6 @@ struct TunnelLogger : public Logger
     }
 };
 
-struct TunnelSink : Sink
-{
-    Sink & to;
-
-    TunnelSink(Sink & to)
-        : to(to)
-    {
-    }
-
-    void operator()(std::string_view data) override
-    {
-        to << STDERR_WRITE;
-        writeString(data, to);
-    }
-};
-
 struct TunnelSource : BufferedSource
 {
     Source & from;
@@ -216,6 +205,8 @@ struct TunnelSource : BufferedSource
         return n;
     }
 };
+
+} // namespace
 
 struct ClientSettings
 {
@@ -318,10 +309,41 @@ static void performOp(
     TrustedFlag trusted,
     RecursiveFlag recursive,
     WorkerProto::BasicServerConnection & conn,
-    WorkerProto::Op op)
+    WorkerProto::Op op,
+    Builder & builder)
 {
     WorkerProto::ReadConn rconn(conn);
     WorkerProto::WriteConn wconn(conn);
+
+    if (recursive == daemon::RecursiveFlag::RecursiveSubmitted) {
+        // Limit valid calls to reduce opportunities for nonreproducability in builds
+        // Since this is an allowlist, it's easiest to put it at the top before the switch
+        static constexpr std::array validOperations = {
+            // All the types of "Add" should be allowed
+            WorkerProto::Op::AddToStore,
+            WorkerProto::Op::AddMultipleToStore,
+            WorkerProto::Op::AddToStoreNar,
+            WorkerProto::Op::AddToStoreScanning,
+            // SubmitOutput is designed specifically for this use case
+            WorkerProto::Op::SubmitOutput,
+            // Used by nix cli, should never change actual outputs
+            WorkerProto::Op::AddTempRoot,
+            // Used by nix cli, restricted store will prevent it from seeing derivations it shouldn't
+            WorkerProto::Op::IsValidPath,
+        };
+        if (std::ranges::find(validOperations, op) == validOperations.end()) {
+            throw Error("Operation %d not allowed inside derivation", op);
+        }
+    } else {
+        // Operations designed only for the experimental builder-rpc-v0 should never be exposed outside
+        // derivaitons that use it.
+        // AddToStoreScanning is still acceptable in ordinary recursive derivations, though.
+        // Throw the same error we do when using an unknown operation.
+        if (op == WorkerProto::Op::SubmitOutput
+            || (op == WorkerProto::Op::AddToStoreScanning && recursive == daemon::RecursiveFlag::NotRecursive)) {
+            throw Error("invalid operation %1%", op);
+        }
+    }
 
     switch (op) {
 
@@ -565,7 +587,7 @@ static void performOp(
         if (mode == bmRepair && !trusted)
             throw Error("repairing is not allowed because you are not in 'trusted-users'");
         logger->startWork();
-        store->buildPaths(drvs, mode);
+        builder.buildPaths(drvs, mode);
         logger->stopWork();
         conn.to << 1;
         break;
@@ -584,7 +606,7 @@ static void performOp(
             throw Error("repairing is not allowed because you are not in 'trusted-users'");
 
         logger->startWork();
-        auto results = store->buildPathsWithResults(drvs, mode);
+        auto results = builder.buildPathsWithResults(drvs, mode);
         logger->stopWork();
 
         WorkerProto::write(*store, wconn, results);
@@ -658,12 +680,10 @@ static void performOp(
                paths. */
             assert(drvType.isCA());
 
-            Derivation drv2;
-            static_cast<BasicDerivation &>(drv2) = drv;
-            drvPath = store->writeDerivation(Derivation{drv2});
+            drvPath = store->writeDerivation(drv.unresolve());
         }
 
-        auto res = store->buildDerivation(drvPath, drv, buildMode);
+        auto res = builder.buildDerivation(drvPath, drv, buildMode);
         logger->stopWork();
         WorkerProto::write(*store, wconn, res);
         break;
@@ -672,7 +692,7 @@ static void performOp(
     case WorkerProto::Op::EnsurePath: {
         auto path = WorkerProto::Serialise<StorePath>::read(*store, rconn);
         logger->startWork();
-        store->ensurePath(path);
+        builder.ensurePath(path);
         logger->stopWork();
         conn.to << 1;
         break;
@@ -746,14 +766,17 @@ static void performOp(
     case WorkerProto::Op::CollectGarbage: {
         GCOptions options;
         options.action = WorkerProto::Serialise<GCOptions::GCAction>::read(*store, rconn);
-        if (rconn.version.features.contains(WorkerProto::featureDeleteDeadSpecific)) {
+        if (rconn.version.features.contains(WorkerProto::featureDeleteDeadSpecificReferrers)) {
             options.pathsToDelete = WorkerProto::Serialise<GCOptions::GCPaths>::read(*store, rconn);
         } else {
             auto paths = WorkerProto::Serialise<StorePathSet>::read(*store, rconn);
             if (options.action != GCAction::gcDeleteSpecific && paths.empty())
                 options.pathsToDelete = GCOptions::WholeStore{};
             else
-                options.pathsToDelete = paths;
+                options.pathsToDelete = GCOptions::SpecificPaths{
+                    .paths = paths,
+                    .deleteReferrers = false,
+                };
         }
         conn.from >> options.ignoreLiveness >> options.maxFreed;
         // obsolete fields
@@ -761,8 +784,9 @@ static void performOp(
         readInt(conn.from);
         readInt(conn.from);
 
-        if (options.action == GCAction::gcDeleteDead && std::holds_alternative<StorePathSet>(options.pathsToDelete)
-            && !conn.protoVersion.features.contains(WorkerProto::featureDeleteDeadSpecific)) {
+        if (options.action == GCAction::gcDeleteDead
+            && std::holds_alternative<GCOptions::SpecificPaths>(options.pathsToDelete)
+            && !conn.protoVersion.features.contains(WorkerProto::featureDeleteDeadSpecificReferrers)) {
             throw Error(
                 "Garbage collecting specific paths requested but it is not supported by the negotiated protocol");
         }
@@ -809,7 +833,7 @@ static void performOp(
 
         // FIXME: use some setting in recursive mode. Will need to use
         // non-global variables.
-        if (!recursive)
+        if (recursive == RecursiveFlag::NotRecursive)
             clientSettings.apply(trusted);
 
         logger->stopWork();
@@ -1022,15 +1046,70 @@ static void performOp(
         break;
     }
 
+    case WorkerProto::Op::AddToStoreScanning: {
+        auto name = readString(conn.from);
+        auto camStr = readString(conn.from);
+
+        experimentalFeatureSettings.require(Xp::DynamicDerivations);
+
+        if (!conn.protoVersion.features.contains(WorkerProto::featureAddToStoreScanning))
+            throw Error("Adding to store with scanning was requested, but not supported in negotiated protocol");
+
+        if (recursive == daemon::RecursiveFlag::NotRecursive)
+            throw Error(
+                "AddToStoreScanning only valid within derivation with `builder-rpc-v0` or `recursive-nix` feature");
+
+        auto & submitStore = require<SubmitStore>(*store);
+
+        logger->startWork();
+        auto pathInfo = [&]() {
+            // NB: FramedSource must be out of scope before logger->stopWork();
+            // FIXME: this means that if there is an error
+            // half-way through, the client will keep sending
+            // data, since we haven't sent it the error yet.
+            auto [contentAddressMethod, hashAlgo] = ContentAddressMethod::parseWithAlgo(camStr);
+            FramedSource source(conn.from);
+            FileSerialisationMethod dumpMethod = contentAddressMethod.getFileSerialisationMethod();
+            return submitStore.addToStoreScanning(source, name, dumpMethod, contentAddressMethod, hashAlgo);
+        }();
+        logger->stopWork();
+
+        WorkerProto::Serialise<ValidPathInfo>::write(*store, wconn, *pathInfo);
+        break;
+    }
+
+    case WorkerProto::Op::SubmitOutput: {
+        experimentalFeatureSettings.require(Xp::DynamicDerivations);
+        if (recursive != daemon::RecursiveFlag::RecursiveSubmitted)
+            throw Error("SubmitOutput only valid within derivation with `builder-rpc-v0` feature");
+
+        auto path = WorkerProto::Serialise<SingleDerivedPath>::read(*store, rconn);
+        auto output = WorkerProto::Serialise<OutputName>::read(*store, rconn);
+
+        auto & submitStore = require<SubmitStore>(*store);
+
+        logger->startWork();
+        submitStore.submitOutput(path, output);
+        logger->stopWork();
+        conn.to << 1;
+        break;
+    }
+
     default:
         throw Error("invalid operation %1%", op);
     }
 }
 
-void processConnection(ref<Store> store, FdSource && from, FdSink && to, TrustedFlag trusted, RecursiveFlag recursive)
+void processConnection(
+    ref<Store> store,
+    FdSource && from,
+    FdSink && to,
+    TrustedFlag trusted,
+    RecursiveFlag recursive,
+    std::shared_ptr<Builder> builder)
 {
 #ifndef _WIN32 // TODO need graceful async exit support on Windows?
-    auto monitor = !recursive ? std::make_unique<MonitorFdHup>(from.fd) : nullptr;
+    auto monitor = (recursive == RecursiveFlag::NotRecursive) ? std::make_unique<MonitorFdHup>(from.fd) : nullptr;
     (void) monitor; // suppress warning
     ReceiveInterrupts receiveInterrupts;
 
@@ -1045,9 +1124,24 @@ void processConnection(ref<Store> store, FdSource && from, FdSink && to, Trusted
     });
 #endif
 
+    if (!builder)
+        builder = store->getBuilder();
+
     /* Exchange the greeting. */
+    WorkerProto::Version localVersion;
+
+    if (recursive == RecursiveFlag::RecursiveSubmitted) {
+        localVersion = WorkerProto::builderRpcV0;
+    } else if (recursive == RecursiveFlag::Recursive) {
+        localVersion = WorkerProto::latest;
+        localVersion.features.insert(std::string{WorkerProto::featureDisableSetOptions});
+        localVersion.features.insert(std::string{WorkerProto::featureAddToStoreScanning});
+    } else {
+        localVersion = WorkerProto::latest;
+    }
+
     WorkerProto::BasicServerConnection conn;
-    conn.protoVersion = WorkerProto::BasicServerConnection::handshake(to, from, WorkerProto::latest);
+    conn.protoVersion = WorkerProto::BasicServerConnection::handshake(to, from, localVersion);
 
     if (conn.protoVersion.number < WorkerProto::minimum.number)
         throw Error("the Nix client version is too old");
@@ -1055,14 +1149,11 @@ void processConnection(ref<Store> store, FdSource && from, FdSink && to, Trusted
     conn.to = std::move(to);
     conn.from = std::move(from);
 
-    auto tunnelLogger_ = std::make_unique<TunnelLogger>(conn.to, conn.protoVersion);
-    auto tunnelLogger = tunnelLogger_.get();
-    std::unique_ptr<Logger> prevLogger_;
-    auto prevLogger = logger.get();
+    auto tunnelLogger = new TunnelLogger(conn.to, conn.protoVersion);
+    auto prevLogger = logger;
     // FIXME
-    if (!recursive) {
-        prevLogger_ = std::move(logger);
-        logger = std::move(tunnelLogger_);
+    if (recursive == RecursiveFlag::NotRecursive) {
+        logger = tunnelLogger;
         applyJSONLogger();
     }
 
@@ -1108,7 +1199,7 @@ void processConnection(ref<Store> store, FdSource && from, FdSink && to, Trusted
             debug("performing daemon worker op: %d", op);
 
             try {
-                performOp(tunnelLogger, store, trusted, recursive, conn, op);
+                performOp(tunnelLogger, store, trusted, recursive, conn, op, *builder);
             } catch (Error & e) {
                 /* If we're not in a state where we can send replies, then
                    something went wrong processing the input of the

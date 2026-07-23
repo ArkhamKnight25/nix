@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -42,6 +42,12 @@ configdata_pub.set(
   'NIX_UBSAN_ENABLED',
   ('undefined' in get_option('b_sanitize')).to_int(),
   description : 'Whether nix has been built with UBSan enabled',
+)
+
+configdata_pub.set(
+  'NIX_ASAN_ENABLED',
+  ('address' in get_option('b_sanitize')).to_int(),
+  description : 'Whether nix has been built with ASan enabled',
 )
 
 subdir('nix-meson-build-support/libatomic')
@@ -136,7 +142,9 @@ sources = [ config_priv_h ] + files(
   'base-n.cc',
   'base-nix-32.cc',
   'bump-memory-resource.cc',
+  'caching-source-accessor.cc',
   'canon-path.cc',
+  'checked-arithmetic.cc',
   'compression-algo.cc',
   'compression-settings.cc',
   'compression.cc',

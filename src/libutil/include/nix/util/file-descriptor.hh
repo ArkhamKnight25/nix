@@ -262,10 +262,11 @@ public:
     AutoCloseFD(AutoCloseFD && fd) noexcept;
     ~AutoCloseFD();
     AutoCloseFD & operator=(const AutoCloseFD & fd) = delete;
+    // NOLINTNEXTLINE(performance-noexcept-move-constructor) - technically can throw because of close()
     AutoCloseFD & operator=(AutoCloseFD && fd);
-    Descriptor get() const;
-    explicit operator bool() const;
-    Descriptor release();
+    Descriptor get() const noexcept;
+    explicit operator bool() const noexcept;
+    Descriptor release() noexcept;
     void close();
 
     /**

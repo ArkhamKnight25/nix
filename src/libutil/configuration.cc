@@ -14,6 +14,12 @@
 
 namespace nix {
 
+void Config::anchor() {}
+
+void AbstractConfig::anchor() {}
+
+Setting<AbsolutePath>::~Setting() {}
+
 Config::Config(StringMap initials)
     : AbstractConfig(std::move(initials))
 {
@@ -210,7 +216,7 @@ std::string Config::toKeyValue()
 {
     std::string res;
     for (const auto & s : _settings)
-        if (s.second.isAlias)
+        if (!s.second.isAlias)
             res += fmt("%s = %s\n", s.first, s.second.setting->to_string());
     return res;
 }
@@ -549,6 +555,8 @@ template class BaseSetting<std::filesystem::path>;
 template class BaseSetting<AbsolutePath>;
 template class BaseSetting<std::optional<AbsolutePath>>;
 template class BaseSetting<std::optional<std::string>>;
+
+void ExperimentalFeatureSettings::anchor() {}
 
 bool ExperimentalFeatureSettings::isEnabled(const ExperimentalFeature & feature) const
 {

@@ -160,23 +160,6 @@ std::optional<PosixStat> maybeStat(const std::filesystem::path & path);
 bool pathExists(const std::filesystem::path & path);
 
 /**
- * Canonicalize a path except for the last component.
- *
- * This is useful for getting the canonical location of a symlink.
- *
- * Consider the case where `foo/l` is a symlink. `canonical("foo/l")` will
- * resolve the symlink `l` to its target.
- * `makeParentCanonical("foo/l")` will not resolve the symlink `l` to its target,
- * but does ensure that the returned parent part of the path, `foo` is resolved
- * to `canonical("foo")`, and can therefore be retrieved without traversing any
- * symlinks.
- *
- * If a relative path is passed, it will be made absolute, so that the parent
- * can always be canonicalized.
- */
-std::filesystem::path makeParentCanonical(const std::filesystem::path & path);
-
-/**
  * A version of pathExists that returns false on a permission error.
  * Useful for inferring default paths across directories that might not
  * be readable.
@@ -452,6 +435,12 @@ createTempDir(const std::filesystem::path & tmpRoot = "", const std::string & pr
 AutoCloseFD createAnonymousTempFile();
 
 /**
+ * Create a temporary file at a root, returning a file handle and its path.
+ */
+std::pair<AutoCloseFD, std::filesystem::path>
+createTempFile(const std::filesystem::path & root, const std::filesystem::path & prefix);
+
+/**
  * Create a temporary file, returning a file handle and its path.
  */
 std::pair<AutoCloseFD, std::filesystem::path> createTempFile(const std::filesystem::path & prefix = "nix");
@@ -530,6 +519,13 @@ void chown(const std::filesystem::path & path, uid_t owner, gid_t group);
  * @param path Path to the file to remove.
  */
 void unlink(const std::filesystem::path & path);
+
+/**
+ * Remove a file, throwing an exception on error. ENOENT is ignored.
+ *
+ * @param path Path to the file to remove.
+ */
+void unlinkIfExists(const std::filesystem::path & path);
 
 /**
  * Try to remove a file, ignoring errors.

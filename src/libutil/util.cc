@@ -1,4 +1,5 @@
 #include "nix/util/util.hh"
+#include "nix/util/ref.hh"
 #include "nix/util/fmt.hh"
 #include "nix/util/signals.hh"
 
@@ -14,6 +15,10 @@
 #endif
 
 namespace nix {
+
+void FormatError::anchor() {}
+
+bad_ref_cast::~bad_ref_cast() {}
 
 void initLibUtil()
 {
@@ -80,14 +85,18 @@ std::string replaceStrings(std::string res, std::string_view from, std::string_v
     return res;
 }
 
-std::string rewriteStrings(std::string s, const StringMap & rewrites)
+std::string
+rewriteStrings(std::string s, const StringMap & rewrites, std::set<uint64_t> * matches, uint64_t offsetShift)
 {
     for (auto & i : rewrites) {
         if (i.first == i.second)
             continue;
         size_t j = 0;
-        while ((j = s.find(i.first, j)) != s.npos)
+        while ((j = s.find(i.first, j)) != s.npos) {
+            if (matches)
+                matches->insert(j + offsetShift);
             s.replace(j, i.first.size(), i.second);
+        }
     }
     return s;
 }
@@ -239,6 +248,10 @@ void ignoreExceptionExceptInterrupt(Verbosity lvl)
     try {
         throw;
     } catch (const Interrupted & e) {
+        throw;
+    } catch (const Cancelled & e) {
+        /* Morally the same as Interrupted, just not triggered by a user but some other
+           cancellation. */
         throw;
     } catch (Error & e) {
         printMsg(lvl, ANSI_RED "error (ignored):" ANSI_NORMAL " %s", e.info().msg);

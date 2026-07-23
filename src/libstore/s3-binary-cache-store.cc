@@ -17,6 +17,8 @@ namespace nix {
 
 MakeError(UploadToS3, Error);
 
+void UploadToS3::anchor() {}
+
 static constexpr uint64_t AWS_MIN_PART_SIZE = 5 * 1024 * 1024;           // 5MiB
 static constexpr uint64_t AWS_MAX_PART_SIZE = 5ULL * 1024 * 1024 * 1024; // 5GiB
 static constexpr uint64_t AWS_MAX_PART_COUNT = 10000;
@@ -173,7 +175,7 @@ void S3BinaryCacheStore::upsertFile(
     } catch (FileTransferError & e) {
         UploadToS3 err(e.message());
         err.addTrace({}, "while uploading to S3 binary cache at '%s'", config->cacheUri.to_string());
-        throw err;
+        throw std::move(err);
     }
 }
 
@@ -322,7 +324,7 @@ std::string S3BinaryCacheStore::createMultipartUpload(
         std::move(headers->begin(), headers->end(), std::back_inserter(req.headers));
     }
 
-    auto result = getFileTransfer()->enqueueFileTransfer(req).get();
+    auto result = fileTransfer->enqueueFileTransfer(req).get();
 
     std::regex uploadIdRegex("<UploadId>([^<]+)</UploadId>");
     std::smatch match;
@@ -353,7 +355,7 @@ S3BinaryCacheStore::uploadPart(std::string_view key, std::string_view uploadId, 
     req.data = {payload};
     req.mimeType = "application/octet-stream";
 
-    auto result = getFileTransfer()->enqueueFileTransfer(req).get();
+    auto result = fileTransfer->enqueueFileTransfer(req).get();
 
     if (result.etag.empty()) {
         throw Error("S3 UploadPart response missing ETag for part %d", partNumber);
@@ -374,7 +376,7 @@ void S3BinaryCacheStore::abortMultipartUpload(std::string_view key, std::string_
         req.uri = VerbatimURL(url);
         req.method = HttpMethod::Delete;
 
-        getFileTransfer()->enqueueFileTransfer(req).get();
+        fileTransfer->enqueueFileTransfer(req).get();
     } catch (...) {
         ignoreExceptionInDestructor();
     }
@@ -407,7 +409,7 @@ void S3BinaryCacheStore::completeMultipartUpload(
     req.data = {payload};
     req.mimeType = "text/xml";
 
-    getFileTransfer()->enqueueFileTransfer(req).get();
+    fileTransfer->enqueueFileTransfer(req).get();
 
     debug("S3 multipart upload completed: %d parts uploaded for '%s'", partEtags.size(), key);
 }

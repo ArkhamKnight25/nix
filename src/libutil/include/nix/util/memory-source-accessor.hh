@@ -108,6 +108,10 @@ VariantT<RegularContents, recur>::operator<=>(const VariantT<RegularContents, re
  */
 struct MemorySourceAccessor : virtual SourceAccessor
 {
+private:
+    void anchor() override;
+
+public:
     using File = fso::VariantT<std::string, true>;
 
     std::optional<File> root;
@@ -140,6 +144,10 @@ struct MemorySourceAccessor : virtual SourceAccessor
      */
     File * open(const CanonPath & path, std::optional<File> create);
 
+    /**
+     * @brief Insert a new regular file into with the specified @p contents.
+     * @todo Have a way to insert "borrowed" std::string_view without copying.
+     */
     SourcePath addFile(CanonPath path, std::string && contents);
 };
 
@@ -148,6 +156,10 @@ struct MemorySourceAccessor : virtual SourceAccessor
  */
 struct MemorySink : FileSystemObjectSink
 {
+private:
+    void anchor() override;
+
+public:
     MemorySourceAccessor & dst;
 
     MemorySink(MemorySourceAccessor & dst)
@@ -186,29 +198,27 @@ struct json_avoids_null<MemorySourceAccessor> : std::true_type
 
 namespace nlohmann {
 
-using namespace nix;
-
-#define ARG fso::Regular<RegularContents>
+#define ARG nix::fso::Regular<RegularContents>
 template<typename RegularContents>
 JSON_IMPL_INNER(ARG);
 #undef ARG
 
-#define ARG fso::DirectoryT<Child>
+#define ARG nix::fso::DirectoryT<Child>
 template<typename Child>
 JSON_IMPL_INNER(ARG);
 #undef ARG
 
 template<>
-JSON_IMPL_INNER(fso::Symlink);
+JSON_IMPL_INNER(nix::fso::Symlink);
 
 template<>
-JSON_IMPL_INNER(fso::Opaque);
+JSON_IMPL_INNER(nix::fso::Opaque);
 
-#define ARG fso::VariantT<RegularContents, recur>
+#define ARG nix::fso::VariantT<RegularContents, recur>
 template<typename RegularContents, bool recur>
 JSON_IMPL_INNER(ARG);
 #undef ARG
 
 } // namespace nlohmann
 
-JSON_IMPL(MemorySourceAccessor)
+JSON_IMPL(nix::MemorySourceAccessor)

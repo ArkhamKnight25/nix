@@ -14,6 +14,8 @@
 
 namespace nix {
 
+void LoggerSettings::anchor() {}
+
 LoggerSettings loggerSettings;
 
 static GlobalConfig::Register rLoggerSettings(&loggerSettings);
@@ -30,7 +32,13 @@ void setCurActivity(const ActivityId activityId)
     curActivity = activityId;
 }
 
-std::unique_ptr<Logger> logger = makeSimpleLogger(true);
+/**
+ * This is a raw pointer to allow it to leak.
+ * Avoids races in activity teardown.
+ */
+Logger * logger = makeSimpleLogger(true).release();
+
+Logger::~Logger() {}
 
 void Logger::warn(const std::string & msg)
 {
@@ -56,6 +64,8 @@ std::optional<Logger::Suspension> Logger::suspendIf(bool cond)
         return suspend();
     return {};
 }
+
+namespace {
 
 class SimpleLogger : public Logger
 {
@@ -146,6 +156,8 @@ public:
     }
 };
 
+} // namespace
+
 Verbosity verbosity = lvlInfo;
 
 static void writeFullLogging(Descriptor fd, std::string_view s)
@@ -208,6 +220,8 @@ void to_json(nlohmann::json & json, std::shared_ptr<const Pos> pos)
         json["file"] = nullptr;
     }
 }
+
+namespace {
 
 struct JSONLogger : Logger
 {
@@ -341,6 +355,8 @@ struct JSONLogger : Logger
     }
 };
 
+} // namespace
+
 std::unique_ptr<Logger> makeJSONLogger(Descriptor fd, bool includeNixPrefix)
 {
     return std::make_unique<JSONLogger>(fd, includeNixPrefix);
@@ -359,9 +375,15 @@ std::unique_ptr<Logger> makeJSONLogger(const std::filesystem::path & path, bool 
         }
     };
 
-    AutoCloseFD fd = std::filesystem::is_socket(path)
-                         ? connect(path)
-                         : toDescriptor(open(path.string().c_str(), O_CREAT | O_APPEND | O_WRONLY, 0644));
+    AutoCloseFD fd = std::filesystem::is_socket(path) ? connect(path)
+                                                      : toDescriptor(open(
+                                                            path.string().c_str(),
+                                                            O_CREAT | O_APPEND | O_WRONLY
+#ifndef _WIN32
+                                                                | O_CLOEXEC
+#endif
+                                                            ,
+                                                            0644));
     if (!fd)
         throw SysError("opening log file %1%", PathFmt(path));
 
@@ -375,7 +397,7 @@ void applyJSONLogger()
             std::vector<std::unique_ptr<Logger>> loggers;
             loggers.push_back(makeJSONLogger(*opt, false));
             try {
-                logger = makeTeeLogger(std::move(logger), std::move(loggers));
+                logger = makeTeeLogger(std::unique_ptr<Logger>(logger), std::move(loggers)).release();
             } catch (...) {
                 // `logger` is now gone so give up.
                 abort();

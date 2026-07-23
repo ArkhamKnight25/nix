@@ -21,6 +21,12 @@
 
 namespace nix {
 
+void BadHash::anchor() {}
+
+void AbstractHashSink::anchor() {}
+
+void HashSink::anchor() {}
+
 const StringSet hashAlgorithms = {"blake3", "md5", "sha1", "sha256", "sha512"};
 
 const StringSet hashFormats = {"base64", "nix32", "base16", "sri"};
@@ -513,17 +519,15 @@ std::string_view printHashAlgo(HashAlgorithm ha)
 
 namespace nlohmann {
 
-using namespace nix;
-
-Hash adl_serializer<Hash>::from_json(const json & json, const ExperimentalFeatureSettings & xpSettings)
+nix::Hash adl_serializer<nix::Hash>::from_json(const json & json, const nix::ExperimentalFeatureSettings & xpSettings)
 {
-    auto & s = getString(json);
-    return Hash::parseSRI(s, xpSettings);
+    auto & s = nix::getString(json);
+    return nix::Hash::parseSRI(s, xpSettings);
 }
 
-void adl_serializer<Hash>::to_json(json & json, const Hash & hash)
+void adl_serializer<nix::Hash>::to_json(json & json, const nix::Hash & hash)
 {
-    json = hash.to_string(HashFormat::SRI, true);
+    json = hash.to_string(nix::HashFormat::SRI, true);
 }
 
 } // namespace nlohmann

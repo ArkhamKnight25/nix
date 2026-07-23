@@ -45,6 +45,7 @@
 #include <iostream>
 #include <regex>
 #include <ranges>
+#include <future>
 
 namespace std {
 
@@ -74,6 +75,8 @@ namespace nix {
 
 struct GitSourceAccessor;
 
+namespace {
+
 struct GitError final : public CloneableError<GitError, Error>
 {
     template<typename... Ts>
@@ -96,6 +99,34 @@ struct GitError final : public CloneableError<GitError, Error>
     {
     }
 };
+
+struct GitIndexerSink final : public BufferedSink
+{
+    git_indexer * indexer;
+    git_indexer_progress stats{};
+
+    GitIndexerSink(git_indexer * indexer)
+        : BufferedSink(1 * 1024 * 1024)
+        , indexer(indexer)
+    {
+        assert(indexer);
+    }
+
+    GitIndexerSink(GitIndexerSink &&) = delete;
+    GitIndexerSink(const GitIndexerSink &) = delete;
+    GitIndexerSink & operator=(GitIndexerSink &&) = delete;
+    GitIndexerSink & operator=(const GitIndexerSink &) = delete;
+    ~GitIndexerSink() = default;
+
+    void writeUnbuffered(std::string_view data) override
+    {
+        checkInterrupt();
+        if (git_indexer_append(indexer, data.data(), data.size(), &stats))
+            throw GitError("appending to git packfile index");
+    }
+};
+
+} // namespace
 
 typedef std::unique_ptr<git_repository, Deleter<git_repository_free>> Repository;
 typedef std::unique_ptr<git_tree_entry, Deleter<git_tree_entry_free>> TreeEntry;
@@ -226,7 +257,7 @@ static git_packbuilder_progress PACKBUILDER_PROGRESS_CHECK_INTERRUPT = &packBuil
 
 static void initRepoAtomically(std::filesystem::path & path, GitRepo::Options options)
 {
-    if (pathExists(path.string()))
+    if (pathExists(path))
         return;
 
     if (!options.create)
@@ -333,52 +364,79 @@ struct GitRepoImpl : GitRepo, std::enable_shared_from_this<GitRepoImpl>
 
     void flush() override
     {
+        std::size_t objectCount;
+        if (git_mempack_object_count(&objectCount, mempackBackend))
+            throw GitError("querying the number of objects in a git memory packer backend");
+
+        if (!objectCount)
+            /* Nothing to do. */
+            return;
+
         checkInterrupt();
 
-        git_buf buf = GIT_BUF_INIT;
-        Finally _disposeBuf{[&] { git_buf_dispose(&buf); }};
         PackBuilder packBuilder;
         PackBuilderContext packBuilderContext;
-        git_packbuilder_new(Setter(packBuilder), *this);
-        git_packbuilder_set_callbacks(packBuilder.get(), PACKBUILDER_PROGRESS_CHECK_INTERRUPT, &packBuilderContext);
+        if (git_packbuilder_new(Setter(packBuilder), *this))
+            throw GitError("creating git pack builder");
+
+        if (git_packbuilder_set_callbacks(packBuilder.get(), PACKBUILDER_PROGRESS_CHECK_INTERRUPT, &packBuilderContext))
+            throw GitError("setting git pack builder callbacks");
+
         git_packbuilder_set_threads(packBuilder.get(), 0 /* autodetect */);
 
         packBuilderContext.handleException(
             "preparing packfile", git_mempack_write_thin_pack(mempackBackend, packBuilder.get()));
         checkInterrupt();
-        packBuilderContext.handleException("writing packfile", git_packbuilder_write_buf(&buf, packBuilder.get()));
-        checkInterrupt();
 
-        std::string repo_path = std::string(git_repository_path(repo.get()));
-        while (!repo_path.empty() && repo_path.back() == '/')
-            repo_path.pop_back();
-        std::string pack_dir_path = repo_path + "/objects/pack";
+        auto packFilesPath = std::filesystem::path(git_repository_path(repo.get())) / "objects/pack";
 
-        // TODO (performance): could the indexing be done in a separate thread?
-        //                     we'd need a more streaming variation of
-        //                     git_packbuilder_write_buf, or incur the cost of
-        //                     copying parts of the buffer to a separate thread.
-        //                     (synchronously on the git_packbuilder_write_buf thread)
         Indexer indexer;
-        git_indexer_progress stats;
-        if (git_indexer_new(Setter(indexer), pack_dir_path.c_str(), 0, nullptr, nullptr))
+        if (git_indexer_new(Setter(indexer), packFilesPath.c_str(), 0, nullptr, nullptr))
             throw GitError("creating git packfile indexer");
 
-        // TODO: provide index callback for checkInterrupt() termination
-        //       though this is about an order of magnitude faster than the packbuilder
-        //       expect up to 1 sec latency due to uninterruptible git_indexer_append.
-        constexpr size_t chunkSize = 128 * 1024;
-        for (size_t offset = 0; offset < buf.size; offset += chunkSize) {
-            if (git_indexer_append(indexer.get(), buf.ptr + offset, std::min(chunkSize, buf.size - offset), &stats))
-                throw GitError("appending to git packfile index");
-            checkInterrupt();
-        }
+        struct State
+        {
+            Indexer & indexer;
+            PackBuilderContext & packBuilderContext;
+            GitIndexerSink sink{indexer.get()};
+        };
+
+        State state{
+            .indexer = indexer,
+            .packBuilderContext = packBuilderContext,
+        };
+
+        packBuilderContext.handleException(
+            "writing packfile",
+            git_packbuilder_foreach(
+                packBuilder.get(),
+                [](void * buf, size_t size, void * payload) -> int {
+                    auto & state = *static_cast<State *>(payload);
+                    try {
+                        state.sink(std::string_view(static_cast<const char *>(buf), size));
+                    } catch (...) {
+                        state.packBuilderContext.exception = std::current_exception();
+                        return GIT_EUSER;
+                    }
+                    return GIT_OK;
+                },
+                &state));
+
+        state.sink.flush();
+
+        auto & stats = state.sink.stats;
 
         if (git_indexer_commit(indexer.get(), &stats))
             throw GitError("committing git packfile index");
 
         if (git_mempack_reset(mempackBackend))
             throw GitError("resetting git mempack backend");
+
+        debug(
+            "committed index and pack file to pack-%s.{idx,pack}, objects = %d, deltas = %d",
+            git_indexer_name(indexer.get()),
+            stats.total_objects,
+            stats.total_deltas);
 
         checkInterrupt();
     }
@@ -389,7 +447,6 @@ struct GitRepoImpl : GitRepo, std::enable_shared_from_this<GitRepoImpl>
      */
     Pool<GitRepoImpl> getPool()
     {
-        // TODO: as an optimization, it would be nice to include `this` in the pool.
         return Pool<GitRepoImpl>(std::numeric_limits<size_t>::max(), [this]() -> ref<GitRepoImpl> {
             auto repo = make_ref<GitRepoImpl>(path, options);
 
@@ -570,7 +627,7 @@ struct GitRepoImpl : GitRepo, std::enable_shared_from_this<GitRepoImpl>
 
         /* Get submodule info. */
         auto modulesFile = path / ".gitmodules";
-        if (pathExists(modulesFile.string()))
+        if (pathExists(modulesFile))
             info.submodules = parseSubmodules(modulesFile);
 
         return info;
@@ -782,8 +839,11 @@ ref<GitRepo> GitRepo::openRepo(const std::filesystem::path & path, GitRepo::Opti
  * Raw git tree input accessor.
  */
 
-struct GitSourceAccessor : SourceAccessor
+struct GitSourceAccessor final : SourceAccessor
 {
+private:
+    void anchor() override {};
+public:
     struct State
     {
         ref<GitRepoImpl> repo;
@@ -812,20 +872,16 @@ struct GitSourceAccessor : SourceAccessor
 
         if (state->lfsFetch) {
             if (state->lfsFetch->shouldFetch(path)) {
-                StringSink s;
                 try {
                     // FIXME: do we need to hold the state lock while
                     // doing this?
                     auto contents =
                         std::string((const char *) git_blob_rawcontent(blob.get()), git_blob_rawsize(blob.get()));
-                    state->lfsFetch->fetch(contents, path, s, [&s](uint64_t size) { s.s.reserve(size); });
+                    state->lfsFetch->fetch(contents, path, sink, sizeCallback);
                 } catch (Error & e) {
                     e.addTrace({}, "while smudging git-lfs file '%s'", path);
                     throw;
                 }
-                sizeCallback(s.s.size());
-                StringSource source{s.s};
-                source.drainInto(sink);
                 return;
             }
         }
@@ -1060,8 +1116,11 @@ struct GitSourceAccessor : SourceAccessor
     }
 };
 
-struct GitExportIgnoreSourceAccessor : CachingFilteringSourceAccessor
+struct GitExportIgnoreSourceAccessor final : CachingFilteringSourceAccessor
 {
+private:
+    void anchor() override {};
+public:
     ref<GitRepoImpl> repo;
     std::optional<Hash> rev;
 
@@ -1120,7 +1179,11 @@ struct GitExportIgnoreSourceAccessor : CachingFilteringSourceAccessor
     }
 };
 
-struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
+void GitFileSystemObjectSink::anchor() {}
+
+namespace {
+
+struct GitFileSystemObjectSinkImpl final : GitFileSystemObjectSink
 {
     ref<GitRepoImpl> repo;
 
@@ -1129,6 +1192,13 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
     unsigned int concurrency = std::min(std::thread::hardware_concurrency(), 10U);
 
     ThreadPool workers{concurrency};
+
+    /**
+     * If repo has a non-null packBackend, this has a copy of the refresh function
+     * from the backend virtual table. This is needed to restore it after we've flushed
+     * the sink. We modify it to avoid unnecessary I/O on non-existent oids.
+     */
+    decltype(::git_odb_backend::refresh) packfileOdbRefresh = nullptr;
 
     /** Total file contents in flight. */
     std::atomic<size_t> totalBufSize{0};
@@ -1139,13 +1209,22 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
         : repo(repo)
         , repoPool(repo->getPool())
     {
+        if (auto * backend = repo->packBackend)
+            packfileOdbRefresh = std::exchange(backend->refresh, nullptr);
     }
+
+    GitFileSystemObjectSinkImpl(GitFileSystemObjectSinkImpl &&) = delete;
+    GitFileSystemObjectSinkImpl(const GitFileSystemObjectSinkImpl &) = delete;
+    GitFileSystemObjectSinkImpl & operator=(GitFileSystemObjectSinkImpl &&) = delete;
+    GitFileSystemObjectSinkImpl & operator=(const GitFileSystemObjectSinkImpl &) = delete;
 
     ~GitFileSystemObjectSinkImpl()
     {
         // Make sure the worker threads are destroyed before any state
         // they're referring to.
         workers.shutdown();
+        if (auto * backend = repo->packBackend; backend && packfileOdbRefresh)
+            backend->refresh = packfileOdbRefresh;
     }
 
     struct Child;
@@ -1153,7 +1232,7 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
     /// A directory to be written as a Git tree.
     struct Directory
     {
-        std::map<std::string, Child> children;
+        std::map<std::string, Child, std::less<>> children;
         std::optional<git_oid> oid;
 
         Child & lookup(const CanonPath & path)
@@ -1162,7 +1241,7 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
             auto parent = path.parent();
             auto cur = this;
             for (auto & name : *parent) {
-                auto i = cur->children.find(std::string(name));
+                auto i = cur->children.find(name);
                 if (i == cur->children.end())
                     throw Error("path '%s' does not exist", path);
                 auto dir = std::get_if<Directory>(&i->second.file);
@@ -1171,51 +1250,78 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
                 cur = dir;
             }
 
-            auto i = cur->children.find(std::string(*path.baseName()));
+            auto i = cur->children.find(*path.baseName());
             if (i == cur->children.end())
                 throw Error("path '%s' does not exist", path);
             return i->second;
         }
     };
 
-    size_t nextId = 0; // for Child.id
+    /* FIXME: Most of this logic is independent from git. Come up with a tree sink interface
+       and an adapter for a ExtendedFileSystemObjectSink that implements the tarball unpacking
+       semantics (i.e. overwriting of entries). Also deduplicate with MemorySourceAccessor. */
 
     struct Child
     {
         git_filemode_t mode;
-        std::variant<Directory, git_oid> file;
+        std::variant<Directory, git_oid, std::shared_future<git_oid>> file;
 
-        /// Sequential numbering of the file in the tarball. This is
-        /// used to make sure we only import the latest version of a
-        /// path.
-        size_t id{0};
+        const git_oid & getOid() const &
+        {
+            return std::visit(
+                overloaded{
+                    [](const Directory & dir) -> const git_oid & { return dir.oid.value(); },
+                    [](const git_oid & oid) -> const git_oid & { return oid; },
+                    [](const std::shared_future<git_oid> & oid) -> const git_oid & { return oid.get(); },
+                },
+                file);
+        }
     };
 
-    struct State
-    {
-        Directory root;
-    };
+    Directory root;
 
-    Sync<State> _state;
-
-    void addNode(State & state, const CanonPath & path, Child && child)
+    void addNode(const CanonPath & path, Child && child)
     {
-        assert(!path.isRoot());
+        if (path.isRoot())
+            throw Error("cannot create a file at the root of the git repository");
+
         auto parent = path.parent();
+        assert(parent);
 
-        Directory * cur = &state.root;
+        Directory * cur = &root;
 
         for (auto & i : *parent) {
             auto child = std::get_if<Directory>(
                 &cur->children.emplace(std::string(i), Child{GIT_FILEMODE_TREE, {Directory()}}).first->second.file);
-            assert(child);
+            if (!child)
+                throw Error("parent of '%1%' is not a directory", path.rel());
             cur = child;
         }
 
         std::string name(*path.baseName());
+        auto prev = cur->children.find(name);
 
-        if (auto prev = cur->children.find(name); prev == cur->children.end() || prev->second.id < child.id)
-            cur->children.insert_or_assign(name, std::move(child));
+        if (prev == cur->children.end()) {
+            cur->children.insert_or_assign(std::move(name), std::move(child));
+            return;
+        }
+
+        /* Overwriting part of the tree. We'd like to behave somewhat
+           similarly to libarchive without ARCHIVE_EXTRACT_NO_OVERWRITE. */
+        const auto & prevChild = prev->second;
+
+        /* libarchive tries to unlink an entry, which only succeeds on empty
+           trees - so behave the same way. Everything else is fair game. */
+        if (const auto * maybePrevDir = std::get_if<Directory>(&prevChild.file)) {
+            /* "Replacing" directory with a directory is always a-ok. */
+            if (std::holds_alternative<Directory>(child.file))
+                return;
+
+            if (!maybePrevDir->children.empty())
+                throw Error("cannot create '%1%', conflicting non-empty directory", path.rel());
+        }
+
+        cur->children.insert_or_assign(std::move(name), std::move(child));
     }
 
     void createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func) override
@@ -1286,8 +1392,6 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
 
         func(*crf);
 
-        auto id = nextId++;
-
         if (crf->stream) {
             /* Finish the slow path by creating the blob object synchronously.
                Call .release(), since git_blob_create_from_stream_commit
@@ -1295,48 +1399,52 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
             git_oid oid;
             if (git_blob_create_from_stream_commit(&oid, crf->stream.release()))
                 throw GitError("creating a blob object for '%s'", path);
-            addNode(
-                *_state.lock(),
-                crf->path,
-                Child{crf->executable ? GIT_FILEMODE_BLOB_EXECUTABLE : GIT_FILEMODE_BLOB, oid, id});
+            addNode(crf->path, Child{crf->executable ? GIT_FILEMODE_BLOB_EXECUTABLE : GIT_FILEMODE_BLOB, oid});
             return;
         }
 
-        /* Fast path: create the blob object in a separate thread. */
-        workers.enqueue([this, crf{std::move(crf)}, id]() {
-            auto repo(repoPool.get());
+        std::promise<git_oid> promise;
+        addNode(
+            crf->path,
+            Child{
+                crf->executable ? GIT_FILEMODE_BLOB_EXECUTABLE : GIT_FILEMODE_BLOB,
+                promise.get_future(),
+            });
 
-            git_oid oid;
-            if (git_blob_create_from_buffer(&oid, *repo, crf->contents.data(), crf->contents.size()))
-                throw GitError("creating a blob object for '%s' from in-memory buffer", crf->path);
+        /* Fast path: create the blob object in a separate thread.
+           FIXME: Ugly, make ThreadPool use std::move_only_function. */
+        workers.enqueue(
+            [this, crf{std::move(crf)}, promise = make_ref<decltype(promise)>(std::move(promise))]() mutable {
+                auto repo(repoPool.get());
 
-            addNode(
-                *_state.lock(),
-                crf->path,
-                Child{crf->executable ? GIT_FILEMODE_BLOB_EXECUTABLE : GIT_FILEMODE_BLOB, oid, id});
-        });
+                git_oid oid;
+                if (git_blob_create_from_buffer(&oid, *repo, crf->contents.data(), crf->contents.size()))
+                    throw GitError("creating a blob object for '%s' from in-memory buffer", crf->path);
+
+                /* We don't generally bother with exceptions because those will
+                   be propagated by the thread pool during .process(). */
+                promise->set_value(oid);
+            });
     }
 
     void createDirectory(const CanonPath & path) override
     {
         if (path.isRoot())
             return;
-        auto state(_state.lock());
-        addNode(*state, path, {GIT_FILEMODE_TREE, Directory()});
+        addNode(path, {GIT_FILEMODE_TREE, Directory()});
     }
 
     void createSymlink(const CanonPath & path, const std::string & target) override
     {
-        workers.enqueue([this, path, target]() {
-            auto repo(repoPool.get());
+        /* Symlinks are written to the this repo instance, the mempack backend
+           for which includes the trees. This way we flush both symlinks and
+           trees to the same packfile. Doing this synchronously isn't expensive
+           because symlinks are tiny, so hashing them is cheap. */
+        git_oid oid;
+        if (git_blob_create_from_buffer(&oid, *repo, requireCString(target), target.size()))
+            throw GitError("creating a blob object for tarball symlink member '%s'", path);
 
-            git_oid oid;
-            if (git_blob_create_from_buffer(&oid, *repo, target.c_str(), target.size()))
-                throw GitError("creating a blob object for tarball symlink member '%s'", path);
-
-            auto state(_state.lock());
-            addNode(*state, path, Child{GIT_FILEMODE_LINK, oid});
-        });
+        addNode(path, Child{GIT_FILEMODE_LINK, oid});
     }
 
     std::map<CanonPath, CanonPath> hardLinks;
@@ -1352,16 +1460,14 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
 
         /* Create hard links. */
         {
-            auto state(_state.lock());
             for (auto & [path, target] : hardLinks) {
                 if (target.isRoot())
                     continue;
                 try {
-                    auto child = state->root.lookup(target);
-                    auto oid = std::get_if<git_oid>(&child.file);
-                    if (!oid)
+                    const auto & child = root.lookup(target);
+                    if (std::holds_alternative<Directory>(child.file))
                         throw Error("cannot create a hard link to a directory");
-                    addNode(*state, path, {child.mode, *oid});
+                    addNode(path, {child.mode, child.getOid()});
                 } catch (Error & e) {
                     e.addTrace(nullptr, "while creating a hard link from '%s' to '%s'", path, target);
                     throw;
@@ -1375,30 +1481,34 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
             ThreadPool workers{repos.size()};
             for (auto & repo : repos)
                 workers.enqueue([repo]() { repo->flush(); });
+            workers.enqueue([repo = repo]() { repo->flush(); });
             workers.process();
         }
 
+        if (auto * backend = repo->packBackend)
+            /* We are done writing blobs. Need to refresh to get the objects written by other threads. */
+            packfileOdbRefresh(backend);
+
         // Write the Git trees to disk. Would be nice to have this multithreaded too, but that's hard because a tree
         // can't refer to an object that hasn't been written yet. Also it doesn't make a big difference for performance.
-        auto repo(repoPool.get());
 
-        [&](this const auto & visit, Directory & node) -> void {
+        [&, &repo = *repo](this const auto & visit, Directory & node) -> void {
             checkInterrupt();
 
             // Write the child directories.
             for (auto & child : node.children)
                 if (auto dir = std::get_if<Directory>(&child.second.file))
+                    /* TODO: Limit recursion depth? */
                     visit(*dir);
 
             // Write this directory.
             git_treebuilder * b;
-            if (git_treebuilder_new(&b, *repo, nullptr))
+            if (git_treebuilder_new(&b, repo, nullptr))
                 throw GitError("creating a tree builder");
             TreeBuilder builder(b);
 
-            for (auto & [name, child] : node.children) {
-                auto oid_p = std::get_if<git_oid>(&child.file);
-                auto oid = oid_p ? *oid_p : std::get<Directory>(child.file).oid.value();
+            for (const auto & [name, child] : node.children) {
+                const auto & oid = child.getOid();
                 if (git_treebuilder_insert(nullptr, builder.get(), name.c_str(), &oid, child.mode))
                     throw GitError("adding a file to a tree builder");
             }
@@ -1407,13 +1517,18 @@ struct GitFileSystemObjectSinkImpl : GitFileSystemObjectSink
             if (git_treebuilder_write(&oid, builder.get()))
                 throw GitError("creating a tree object");
             node.oid = oid;
-        }(_state.lock()->root);
+        }(root);
 
         repo->flush();
 
-        return toHash(_state.lock()->root.oid.value());
+        if (auto * backend = repo->packBackend)
+            backend->refresh = std::exchange(packfileOdbRefresh, nullptr);
+
+        return toHash(root.oid.value());
     }
 };
+
+} // namespace
 
 ref<GitSourceAccessor> GitRepoImpl::getRawAccessor(const Hash & rev, const GitAccessorOptions & options)
 {
@@ -1437,13 +1552,15 @@ ref<SourceAccessor> GitRepoImpl::getAccessor(
     const WorkdirInfo & wd, const GitAccessorOptions & options, MakeNotAllowedError makeNotAllowedError)
 {
     auto self = ref<GitRepoImpl>(shared_from_this());
-    ref<SourceAccessor> fileAccessor = AllowListSourceAccessor::create(
-                                           makeFSSourceAccessor(path),
-                                           /*allowedPrefixes=*/wd.files,
-                                           // Always allow access to the root, but not its children.
-                                           /*allowedPaths=*/{CanonPath::root},
-                                           std::move(makeNotAllowedError))
-                                           .cast<SourceAccessor>();
+    ref<SourceAccessor> fileAccessor =
+        AllowListSourceAccessor::create(
+            // Follow the final symlink to the repo. Older nix versions used to do this (maybe somewhat accidentally).
+            makeFSSourceAccessor(path, /*trackLastModified=*/false, FinalSymlink::Follow),
+            /*allowedPrefixes=*/wd.files,
+            // Always allow access to the root, but not its children.
+            /*allowedPaths=*/{CanonPath::root},
+            std::move(makeNotAllowedError))
+            .cast<SourceAccessor>();
     if (options.exportIgnore)
         fileAccessor = make_ref<GitExportIgnoreSourceAccessor>(self, fileAccessor, std::nullopt);
     return fileAccessor;
@@ -1467,6 +1584,7 @@ std::vector<std::tuple<GitRepoImpl::Submodule, Hash>> GitRepoImpl::getSubmodules
     auto configS = accessor->readFile(modulesFile);
 
     auto [fdTemp, pathTemp] = createTempFile("nix-git-submodules");
+    AutoDelete delTemp(pathTemp, /*recursive=*/false);
     try {
         writeFull(fdTemp.get(), configS);
     } catch (SystemError & e) {
@@ -1485,6 +1603,7 @@ std::vector<std::tuple<GitRepoImpl::Submodule, Hash>> GitRepoImpl::getSubmodules
             result.push_back({std::move(submodule), *rev});
     }
 
+    delTemp.deletePath();
     return result;
 }
 
@@ -1502,9 +1621,11 @@ ref<GitRepo> Settings::getTarballCache() const
 
 } // namespace fetchers
 
+static Sync<std::map<std::filesystem::path, GitRepo::WorkdirInfo>> workdirInfoCache_;
+
 GitRepo::WorkdirInfo GitRepo::getCachedWorkdirInfo(const std::filesystem::path & path)
 {
-    static Sync<std::map<std::filesystem::path, WorkdirInfo>> _cache;
+    auto & _cache = workdirInfoCache_;
     {
         auto cache(_cache.lock());
         auto i = cache->find(path);
@@ -1514,6 +1635,11 @@ GitRepo::WorkdirInfo GitRepo::getCachedWorkdirInfo(const std::filesystem::path &
     auto workdirInfo = GitRepo::openRepo(path, {})->getWorkdirInfo();
     _cache.lock()->emplace(path, workdirInfo);
     return workdirInfo;
+}
+
+void GitRepo::invalidateWorkdirInfoCache()
+{
+    workdirInfoCache_.lock()->clear();
 }
 
 bool isLegalRefName(const std::string & refName)

@@ -5,6 +5,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "nix/store/build-result.hh"
+#include "nix/store/daemon.hh"
 #include "nix/store/derivation-options.hh"
 #include "nix/store/build/derivation-building-misc.hh"
 #include "nix/store/derivations.hh"
@@ -17,11 +18,26 @@
 namespace nix {
 
 /**
+ * Rethrow the current exception as a subclass of `Error`.
+ */
+void rethrowExceptionAsError();
+
+/**
+ * Send the current exception to the parent in the format expected by
+ * `DerivationBuilderImpl::processSandboxSetupMessages()`.
+ */
+void handleChildException(bool sendException);
+
+/**
  * Denotes a build failure that stemmed from the builder exiting with a
  * failing exist status.
  */
 struct BuilderFailureError final : CloneableError<BuilderFailureError, BuildError>
 {
+private:
+    void anchor() override;
+
+public:
     int builderStatus;
 
     std::string extraMsgAfter;
@@ -109,7 +125,7 @@ struct DerivationBuilderParams
  */
 struct DerivationBuilderCallbacks
 {
-    virtual ~DerivationBuilderCallbacks() = default;
+    virtual ~DerivationBuilderCallbacks();
 
     /**
      * Open a log file and a pipe to it.
@@ -125,6 +141,17 @@ struct DerivationBuilderCallbacks
      * @todo this should be reworked
      */
     virtual void childTerminated() = 0;
+
+    /**
+     * Process a recursive Nix daemon connection, using a builder
+     * that enforces the restrictions of the given context.
+     */
+    virtual void processDaemonConnection(
+        ref<Store> store,
+        FdSource && from,
+        FdSink && to,
+        RestrictionContext & context,
+        daemon::RecursiveFlag recursiveFlag) = 0;
 };
 
 /**
@@ -140,6 +167,10 @@ struct DerivationBuilderCallbacks
  */
 struct DerivationBuilder : RestrictionContext
 {
+private:
+    void anchor() override;
+
+public:
     DerivationBuilder() = default;
     virtual ~DerivationBuilder() = default;
 
@@ -215,7 +246,7 @@ using DerivationBuilderUnique = std::unique_ptr<DerivationBuilder, DerivationBui
 
 #ifndef _WIN32 // TODO enable `DerivationBuilder` on Windows
 DerivationBuilderUnique makeDerivationBuilder(
-    LocalStore & store, std::unique_ptr<DerivationBuilderCallbacks> miscMethods, DerivationBuilderParams params);
+    LocalStore & store, std::shared_ptr<DerivationBuilderCallbacks> miscMethods, DerivationBuilderParams params);
 
 /**
  * @param handler Must be chosen such that it supports the given
@@ -223,7 +254,7 @@ DerivationBuilderUnique makeDerivationBuilder(
  */
 DerivationBuilderUnique makeExternalDerivationBuilder(
     LocalStore & store,
-    std::unique_ptr<DerivationBuilderCallbacks> miscMethods,
+    std::shared_ptr<DerivationBuilderCallbacks> miscMethods,
     DerivationBuilderParams params,
     const ExternalBuilder & handler);
 #endif

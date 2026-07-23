@@ -23,6 +23,7 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <queue>
 #include <random>
@@ -96,6 +97,8 @@ std::optional<std::filesystem::path> FileTransferSettings::getDefaultSSLCertFile
     return std::nullopt;
 }
 
+void FileTransferSettings::anchor() {}
+
 FileTransferSettings::FileTransferSettings()
 {
     std::optional<AbsolutePath> sslOverride =
@@ -113,6 +116,8 @@ FileTransferSettings fileTransferSettings;
 
 static GlobalConfig::Register rFileTransferSettings(&fileTransferSettings);
 
+FileTransfer::~FileTransfer() {}
+
 namespace {
 
 using curlSList = std::unique_ptr<::curl_slist, decltype([](::curl_slist * list) { ::curl_slist_free_all(list); })>;
@@ -129,11 +134,20 @@ struct curlMultiError final : CloneableError<curlMultiError, Error>
     }
 };
 
+/* Check if the linked libcurl was built with HTTP3 support. */
+bool curlSupportsHttp3()
+{
+    const auto * info = ::curl_version_info(CURLVERSION_NOW);
+    return info && (info->features & CURL_VERSION_HTTP3);
+}
+
 } // namespace
 
 struct curlFileTransfer : public FileTransfer
 {
     const FileTransferSettings & settings;
+
+    const bool http3Supported = curlSupportsHttp3();
 
     curlMulti curlm;
 
@@ -280,8 +294,7 @@ struct curlFileTransfer : public FileTransfer
             }
             try {
                 if (!done && enqueued)
-                    fail(FileTransferError(
-                        Interrupted, {}, "%s of '%s' was interrupted", Uncolored(request.noun()), request.uri));
+                    failInterruptedOrCancelled();
             } catch (...) {
                 ignoreExceptionInDestructor();
             }
@@ -297,7 +310,7 @@ struct curlFileTransfer : public FileTransfer
                 /* Already descriptive enough. */
             } catch (nix::Error & e) {
                 /* Add more context to the error message. */
-                e.addTrace({}, "during %s of '%s'", Uncolored(request.noun()), request.uri.to_string());
+                e.addTrace({}, "during %s of '%s'", Uncolored(request.noun()), request.displayUri());
             } catch (...) {
                 /* Can't add more context to the error. */
             }
@@ -308,6 +321,18 @@ struct curlFileTransfer : public FileTransfer
         void fail(T && e) noexcept
         {
             failEx(std::make_exception_ptr(std::forward<T>(e)));
+        }
+
+        void failInterruptedOrCancelled()
+        {
+            HintFmt fmt("%s of '%s' was interrupted", Uncolored(request.noun()), request.displayUri());
+
+            /* Technically, we don't really have per-transfer cancellation currently,
+               but it's nice to distinguish between the two in the future. */
+            if (getInterrupted())
+                fail(nix::Interrupted(std::move(fmt)));
+            else
+                fail(nix::Cancelled(std::move(fmt)));
         }
 
         LambdaSink finalSink;
@@ -361,7 +386,7 @@ struct curlFileTransfer : public FileTransfer
         try {
             size_t realSize = size * nmemb;
             std::string line((char *) contents, realSize);
-            printMsg(lvlVomit, "got header for '%s': %s", request.uri, trim(line));
+            printMsg(lvlVomit, "got header for '%s': %s", request.displayUri(), trim(line));
 
             static std::regex statusLine("HTTP/[^ ]+ +[0-9]+(.*)", std::regex::extended | std::regex::icase);
             if (std::smatch match; std::regex_match(line, match, statusLine)) {
@@ -450,8 +475,8 @@ struct curlFileTransfer : public FileTransfer
                     *logger,
                     lvlTalkative,
                     actFileTransfer,
-                    fmt("%s '%s'", request.verb(/*continuous=*/true), request.uri),
-                    Logger::Fields{request.uri.to_string()},
+                    fmt("%s '%s'", request.verb(/*continuous=*/true), request.displayUri()),
+                    Logger::Fields{request.displayUri()},
                     request.parentAct);
                 // Reset the start time to when we actually started the download.
                 startTime = std::chrono::steady_clock::now();
@@ -590,7 +615,10 @@ struct curlFileTransfer : public FileTransfer
                                                                 : ""))
                     .c_str());
             curl_easy_setopt(req, CURLOPT_PIPEWAIT, 1);
-            if (fileTransfer.settings.enableHttp2)
+            /* Enable HTTP3 only on user config and linked libcurl have support, o.w. fall back. */
+            if (fileTransfer.settings.enableHttp3 && fileTransfer.http3Supported)
+                curl_easy_setopt(req, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
+            else if (fileTransfer.settings.enableHttp2)
                 curl_easy_setopt(req, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
             else
                 curl_easy_setopt(req, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
@@ -650,6 +678,14 @@ struct curlFileTransfer : public FileTransfer
             curl_easy_setopt(req, CURLOPT_SOCKOPTFUNCTION, cloexec_callback);
 #endif
             curl_easy_setopt(req, CURLOPT_CONNECTTIMEOUT, fileTransfer.settings.connectTimeout.get());
+
+            /* Enable TCP keepalive to detect dead connections and server closures.
+               Probes every 30s to catch network failures and idle timeouts early. */
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPALIVE, 1L);
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPIDLE, 30L);
+            curl_easy_setopt(req, CURLOPT_TCP_KEEPINTVL, 30L);
+            /* Don't reuse idle connections older than 90s. */
+            curl_easy_setopt(req, CURLOPT_MAXAGE_CONN, 90L);
 
             curl_easy_setopt(req, CURLOPT_LOW_SPEED_LIMIT, 1L);
             curl_easy_setopt(req, CURLOPT_LOW_SPEED_TIME, fileTransfer.settings.stalledDownloadTimeout.get());
@@ -716,7 +752,7 @@ struct curlFileTransfer : public FileTransfer
             debug(
                 "finished %s of '%s'; curl status = %d, HTTP status = %d, body = %d bytes, duration = %.2f s",
                 Uncolored(request.noun()),
-                request.uri,
+                request.displayUri(),
                 code,
                 httpStatus,
                 result.bodySize,
@@ -752,14 +788,47 @@ struct curlFileTransfer : public FileTransfer
                 // We treat most errors as transient, but won't retry when hopeless
                 Error err = Transient;
 
-                if (httpStatus == HttpStatus::NotFound || httpStatus == HttpStatus::Gone
+                // S3 returns certain retryable errors as HTTP 400/500/503 with XML error codes.
+                // These take precedence over the generic HTTP status handling below.
+                // Only parse the response body on status codes where S3 XML errors can appear.
+                static constexpr std::array<std::string_view, 12> s3RetryableErrors{{
+                    "IncompleteBody",       // HTTP 400 - network issue
+                    "InternalError",        // HTTP 500 - S3 internal failure
+                    "InternalFailure",      // HTTP 500 - alias for InternalError
+                    "InternalServerError",  // HTTP 500 - alias for InternalError
+                    "RequestExpired",       // HTTP 400 - clock skew / slow upload
+                    "RequestTimeout",       // HTTP 400 - stale connection reuse
+                    "RequestTimeTooSkewed", // HTTP 403 - clock drift
+                    "RequestThrottled",     // HTTP 400 - throttling variant
+                    "SlowDown",             // HTTP 503 - throttling
+                    "ServiceUnavailable",   // HTTP 503 - temporary unavailability
+                    "Throttling",           // HTTP 400 - throttling variant
+                    "ThrottledException",   // HTTP 400 - throttling variant
+                }};
+                // S3 error responses have the form <Error><Code>...</Code>...</Error>.
+                // Require the <Error> root to avoid matching unrelated XML with a <Code> element.
+                static std::regex s3ErrorCodeRegex("<Error>[^]*<Code>([^<]+)</Code>");
+                std::smatch s3Match;
+                bool isS3XmlStatus = httpStatus == 400 || httpStatus == 403 || httpStatus == 500 || httpStatus == 503;
+                auto s3ErrorCode =
+                    (isS3XmlStatus && errorSink && std::regex_search(errorSink->s, s3Match, s3ErrorCodeRegex))
+                        ? s3Match[1].str()
+                        : "";
+
+                if (std::find(s3RetryableErrors.begin(), s3RetryableErrors.end(), s3ErrorCode)
+                    != s3RetryableErrors.end()) {
+                    debug("S3 error '%s', will retry", s3ErrorCode);
+                } else if (
+                    httpStatus == HttpStatus::NotFound || httpStatus == HttpStatus::Gone
                     || code == CURLE_FILE_COULDNT_READ_FILE) {
                     // The file is definitely not there
                     err = NotFound;
-                } else if (
-                    httpStatus == HttpStatus::Unauthorized || httpStatus == HttpStatus::Forbidden
-                    || httpStatus == HttpStatus::ProxyAuthRequired) {
-                    // Don't retry on authentication/authorization failures
+                } else if (httpStatus == HttpStatus::Unauthorized || httpStatus == HttpStatus::ProxyAuthRequired) {
+                    err = Unauthorized;
+                } else if (httpStatus == HttpStatus::Forbidden) {
+                    // Don't retry on authentication/authorization failures.
+                    // Note: the only reason we treat this differently from 401/407 is S3 returns 403 if a file doesn't
+                    // exist and the bucket is unlistable.
                     err = Forbidden;
                 } else if (
                     httpStatus >= 400 && httpStatus < 500 && httpStatus != HttpStatus::RequestTimeout
@@ -810,19 +879,20 @@ struct curlFileTransfer : public FileTransfer
                 std::optional<std::string> response;
                 if (errorSink)
                     response = std::move(errorSink->s);
-                auto exc = code == CURLE_ABORTED_BY_CALLBACK && getInterrupted() ? FileTransferError(
-                                                                                       Interrupted,
-                                                                                       std::move(response),
-                                                                                       "%s of '%s' was interrupted",
-                                                                                       Uncolored(request.noun()),
-                                                                                       request.uri)
-                           : httpStatus != 0
+
+                /* TODO: Also support per-transfer cancellations. */
+                if (code == CURLE_ABORTED_BY_CALLBACK && getInterrupted()) {
+                    failInterruptedOrCancelled();
+                    return;
+                }
+
+                auto exc = httpStatus != 0
                                ? FileTransferError(
                                      err,
                                      std::move(response),
                                      "unable to %s '%s': HTTP error %d%s",
                                      Uncolored(request.verb()),
-                                     request.uri,
+                                     request.displayUri(),
                                      httpStatus,
                                      code == CURLE_OK ? "" : fmt(" (curl error: %s)", curl_easy_strerror(code)))
                                : FileTransferError(
@@ -830,7 +900,7 @@ struct curlFileTransfer : public FileTransfer
                                      std::move(response),
                                      "unable to %s '%s': %s (%d) %s",
                                      Uncolored(request.verb()),
-                                     request.uri,
+                                     request.displayUri(),
                                      curl_easy_strerror(code),
                                      code,
                                      errbuf);
@@ -927,6 +997,8 @@ struct curlFileTransfer : public FileTransfer
     private:
         bool quitting = false;
     public:
+        bool work = false;
+
         void quit()
         {
             quitting = true;
@@ -969,25 +1041,19 @@ struct curlFileTransfer : public FileTransfer
         workerThread = std::thread([&]() { workerThreadEntry(); });
     }
 
-    ~curlFileTransfer()
-    {
-        try {
-            stopWorkerThread();
-        } catch (...) {
-            ignoreExceptionInDestructor();
-        }
-        workerThread.join();
-    }
+    ~curlFileTransfer() override;
 
     void stopWorkerThread()
     {
         /* Signal the worker thread to exit. */
-        state_.lock()->quit();
-        wakeupMulti();
+        auto state(state_.lock());
+        state->quit();
+        wakeupMulti(*state);
     }
 
-    void wakeupMulti()
+    void wakeupMulti(State & state)
     {
+        state.work = true;
         if (auto ec = ::curl_multi_wakeup(curlm.get()))
             throw curlMultiError(ec);
     }
@@ -1037,25 +1103,12 @@ struct curlFileTransfer : public FileTransfer
                 }
             }
 
-            /* Wait for activity, including wakeup events. */
-            long maxSleepTimeMs = items.empty() ? 10000 : 100;
-            auto sleepTimeMs = nextWakeup != std::chrono::steady_clock::time_point()
-                                   ? std::max(
-                                         0,
-                                         (int) std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             nextWakeup - std::chrono::steady_clock::now())
-                                             .count())
-                                   : maxSleepTimeMs;
-
-            int numfds = 0;
-            mc = curl_multi_poll(curlm.get(), nullptr, 0, sleepTimeMs, &numfds);
-            if (mc != CURLM_OK)
-                throw curlMultiError(mc);
-
             nextWakeup = std::chrono::steady_clock::time_point();
 
             std::vector<std::shared_ptr<TransferItem>> incoming;
+            std::vector<std::weak_ptr<Item>> unpause;
             auto now = std::chrono::steady_clock::now();
+            bool haveWork;
 
             {
                 auto state(state_.lock());
@@ -1077,25 +1130,23 @@ struct curlFileTransfer : public FileTransfer
                         break;
                     }
                 }
+                unpause = std::exchange(state->unpause, {});
                 quit = state->isQuitting();
+                haveWork = std::exchange(state->work, false);
             }
 
             for (auto & item : incoming) {
-                debug("starting %s of '%s'", Uncolored(item->request.noun()), item->request.uri);
+                debug("starting %s of '%s'", Uncolored(item->request.noun()), item->request.displayUri());
                 item->init();
                 curl_multi_add_handle(curlm.get(), item->req);
                 item->active = true;
                 items[item->req] = item;
             }
 
-            /* NOTE: Unpausing may invoke callbacks to flush all buffers. */
-            auto unpause = [&]() {
-                auto state(state_.lock());
-                auto res = state->unpause;
-                state->unpause.clear();
-                return res;
-            }();
+            if (quit)
+                break;
 
+            /* NOTE: Unpausing may invoke callbacks to flush all buffers. */
             for (auto & item : unpause) {
                 /* The transfer might have completed (failed) between it getting
                    enqueued for unpause and by the time the worker thread picked
@@ -1105,6 +1156,26 @@ struct curlFileTransfer : public FileTransfer
                     continue;
                 static_cast<TransferItem &>(*ptr).unpause();
             }
+
+            /* Wait for activity, including wakeup events. */
+            long maxSleepTimeMs = items.empty() ? 10000 : 100;
+            auto sleepTimeMs = nextWakeup != std::chrono::steady_clock::time_point()
+                                   ? std::max(
+                                         0,
+                                         (int) std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             nextWakeup - std::chrono::steady_clock::now())
+                                             .count())
+                                   : maxSleepTimeMs;
+
+            /* Since https://github.com/curl/curl/commit/2a2104f3cff44bb28bb570a093be52bbeeed8f23 (8.21),
+               curl_multi_perform seems to swallow queued up events ¯\_(ツ)_/¯. */
+            if (haveWork)
+                sleepTimeMs = 0;
+
+            int numfds = 0;
+            mc = curl_multi_poll(curlm.get(), nullptr, 0, sleepTimeMs, &numfds);
+            if (mc != CURLM_OK)
+                throw curlMultiError(mc);
         }
 
         debug("download thread shutting down");
@@ -1133,7 +1204,7 @@ struct curlFileTransfer : public FileTransfer
     {
         if (item->request.data && item->request.uri.scheme() != "http" && item->request.uri.scheme() != "https"
             && item->request.uri.scheme() != "s3")
-            throw nix::Error("uploading to '%s' is not supported", item->request.uri.to_string());
+            throw nix::Error("uploading to '%s' is not supported", item->request.displayUri());
 
         {
             auto state(state_.lock());
@@ -1141,9 +1212,9 @@ struct curlFileTransfer : public FileTransfer
                 throw nix::Error("cannot enqueue download request because the download thread is shutting down");
             state->incoming.push(item);
             item->enqueued = true; /* Now any exceptions should be reported via the callback. */
+            wakeupMulti(*state);
         }
 
-        wakeupMulti();
         return ItemHandle(item.get_ptr());
     }
 
@@ -1163,7 +1234,7 @@ struct curlFileTransfer : public FileTransfer
     {
         auto state(state_.lock());
         state->unpause.push_back(std::move(item));
-        wakeupMulti();
+        wakeupMulti(*state);
     }
 
     void unpauseTransfer(ItemHandle handle) override
@@ -1174,24 +1245,50 @@ struct curlFileTransfer : public FileTransfer
     }
 };
 
+curlFileTransfer::~curlFileTransfer()
+{
+    try {
+        stopWorkerThread();
+    } catch (...) {
+        ignoreExceptionInDestructor();
+    }
+    workerThread.join();
+}
+
 ref<curlFileTransfer> makeCurlFileTransfer(const FileTransferSettings & settings = fileTransferSettings)
 {
     return make_ref<curlFileTransfer>(settings);
 }
 
+static auto * const _fileTransfer = new Sync<std::shared_ptr<curlFileTransfer>>;
+
 ref<FileTransfer> getFileTransfer()
 {
-    static ref<curlFileTransfer> fileTransfer = makeCurlFileTransfer();
+    auto fileTransfer(_fileTransfer->lock());
 
-    if (fileTransfer->state_.lock()->isQuitting())
-        fileTransfer = makeCurlFileTransfer();
+    if (!*fileTransfer || (*fileTransfer)->state_.lock()->isQuitting())
+        *fileTransfer = makeCurlFileTransfer().get_ptr();
 
-    return fileTransfer;
+    return ref<FileTransfer>(*fileTransfer);
 }
 
 ref<FileTransfer> makeFileTransfer(const FileTransferSettings & settings)
 {
     return makeCurlFileTransfer(settings);
+}
+
+std::string FileTransferRequest::displayUri() const
+{
+    try {
+        auto parsed = uri.parsed();
+        if (parsed.authority && parsed.authority->user) {
+            parsed.authority->user.reset();
+            parsed.authority->password.reset();
+            return parsed.to_string();
+        }
+    } catch (BadURL &) {
+    }
+    return uri.to_string();
 }
 
 void FileTransferRequest::setupForS3()
@@ -1270,7 +1367,7 @@ void FileTransfer::download(
         bool paused = false;
         std::exception_ptr exc;
         std::string data;
-        std::condition_variable avail, request;
+        std::condition_variable avail;
     };
 
     auto _state = std::make_shared<Sync<State>>();
@@ -1280,10 +1377,9 @@ void FileTransfer::download(
     Finally finally([&]() {
         auto state(_state->lock());
         state->quit = true;
-        state->request.notify_one();
     });
 
-    request.dataCallback = [_state, uri = request.uri.to_string()](std::string_view data) -> PauseTransfer {
+    request.dataCallback = [_state, uri = request.displayUri()](std::string_view data) -> PauseTransfer {
         auto state(_state->lock());
 
         if (state->quit)
@@ -1326,7 +1422,6 @@ void FileTransfer::download(
                 state->exc = std::current_exception();
             }
             state->avail.notify_one();
-            state->request.notify_one();
         }});
 
     while (true) {
@@ -1360,8 +1455,6 @@ void FileTransfer::download(
             chunk = std::move(state->data);
             /* Reset state->data after the move, since we check data.empty() */
             state->data = "";
-
-            state->request.notify_one();
         }
 
         /* Flush the data to the sink and wake up the download thread
@@ -1371,6 +1464,8 @@ void FileTransfer::download(
         sink(chunk);
     }
 }
+
+void FileTransferError::anchor() {}
 
 template<typename... Args>
 FileTransferError::FileTransferError(

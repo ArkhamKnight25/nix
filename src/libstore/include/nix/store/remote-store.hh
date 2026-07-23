@@ -6,6 +6,7 @@
 #include <string>
 
 #include "nix/store/store-api.hh"
+#include "nix/store/submit-store.hh"
 #include "nix/util/sync.hh"
 #include "nix/util/file-descriptor.hh"
 #include "nix/store/gc-store.hh"
@@ -23,6 +24,10 @@ class RemoteFSAccessor;
 
 struct RemoteStoreConfig : virtual StoreConfig
 {
+private:
+    void anchor() override;
+
+public:
     RemoteStoreConfig(const Params & params, FilePathType pathType)
         : StoreConfig(params, pathType)
     {
@@ -42,8 +47,12 @@ struct RemoteStoreConfig : virtual StoreConfig
  * \todo RemoteStore is a misnomer - should be something like
  * DaemonStore.
  */
-struct RemoteStore : public virtual Store, public virtual GcStore, public virtual LogStore
+struct RemoteStore : public virtual Store, public virtual GcStore, public virtual LogStore, public virtual SubmitStore
 {
+private:
+    void anchor() override;
+
+public:
     using Config = RemoteStoreConfig;
 
     const Config & config;
@@ -105,18 +114,19 @@ struct RemoteStore : public virtual Store, public virtual GcStore, public virtua
 
     void registerDrvOutput(const Realisation & info) override;
 
+    void submitOutput(const SingleDerivedPath & path, const OutputName & output) override;
+
+    ref<const ValidPathInfo> addToStoreScanning(
+        Source & dump,
+        std::string_view name,
+        FileSerialisationMethod dumpMethod,
+        ContentAddressMethod hashMethod,
+        HashAlgorithm hashAlgo) override;
+
     void queryRealisationUncached(
         const DrvOutput &, Callback<std::shared_ptr<const UnkeyedRealisation>> callback) noexcept override;
 
-    void
-    buildPaths(const std::vector<DerivedPath> & paths, BuildMode buildMode, std::shared_ptr<Store> evalStore) override;
-
-    std::vector<KeyedBuildResult> buildPathsWithResults(
-        const std::vector<DerivedPath> & paths, BuildMode buildMode, std::shared_ptr<Store> evalStore) override;
-
-    BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode) override;
-
-    void ensurePath(const StorePath & path) override;
+    ref<Builder> getBuilder(std::shared_ptr<Store> evalStore) override;
 
     void addTempRoot(const StorePath & path) override;
 
@@ -124,22 +134,15 @@ struct RemoteStore : public virtual Store, public virtual GcStore, public virtua
 
     void collectGarbage(const GCOptions & options, GCResults & results) override;
 
+    void deleteBuildTraces(const std::set<DrvOutput> & keys) override
+    {
+        // TODO support this in the protocol someday
+        unsupported("deleteBuildTraces");
+    };
+
     void optimiseStore() override;
 
     bool verifyStore(bool checkContents, RepairFlag repair) override;
-
-    /**
-     * The default instance would schedule the work on the client side, but
-     * for consistency with `buildPaths` and `buildDerivation` it should happen
-     * on the remote side.
-     *
-     * We make this fail for now so we can add implement this properly later
-     * without it being a breaking change.
-     */
-    void repairPath(const StorePath & path) override
-    {
-        unsupported("repairPath");
-    }
 
     void addSignatures(const StorePath & storePath, const std::set<Signature> & sigs) override;
 
@@ -208,7 +211,7 @@ private:
      */
     Sync<std::set<Descriptor>> connectionFds;
 
-    void copyDrvsFromEvalStore(const std::vector<DerivedPath> & paths, std::shared_ptr<Store> evalStore);
+    friend struct RemoteBuilder;
 };
 
 } // namespace nix

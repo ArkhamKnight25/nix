@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -77,8 +77,10 @@ sources = files(
   'hash.cc',
   'hilite.cc',
   'json-utils.cc',
+  'local-keys.cc',
   'logging.cc',
   'lru-cache.cc',
+  'memo.cc',
   'memory-source-accessor.cc',
   'monitorfdhup.cc',
   'nar-listing.cc',

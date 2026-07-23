@@ -27,7 +27,7 @@ void processExpr(
     const Strings & attrPaths,
     bool parseOnly,
     bool strict,
-    Bindings & autoArgs,
+    const Bindings & autoArgs,
     bool evalOnly,
     OutputKind output,
     bool location,
@@ -66,7 +66,7 @@ void processExpr(
                 if (strict)
                     state.forceValueDeep(vRes);
                 std::set<const void *> seen;
-                printAmbiguous(state, vRes, std::cout, &seen);
+                printAmbiguous(state, vRes, std::cout, &seen, &context);
                 std::cout << std::endl;
             }
         } else {
@@ -94,6 +94,8 @@ void processExpr(
                 std::cout << fmt("%s%s\n", drvPathS, (outputName != "out" ? "!" + outputName : ""));
             }
         }
+
+        state.ensureLazyPathsCopied(context);
     }
 }
 
@@ -170,7 +172,7 @@ static int main_nix_instantiate(int argc, char ** argv)
         auto state = std::make_shared<EvalState>(myArgs.lookupPath, evalStore, fetchSettings, evalSettings, store);
         state->repair = myArgs.repair;
 
-        Bindings & autoArgs = *myArgs.getAutoArgs(*state);
+        const Bindings & autoArgs = *myArgs.getAutoArgs(*state);
 
         if (attrPaths.empty())
             attrPaths = {""};

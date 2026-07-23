@@ -4,6 +4,10 @@
 
 namespace nix {
 
+void MemorySink::anchor() {}
+
+void MemorySourceAccessor::anchor() {}
+
 MemorySourceAccessor::File * MemorySourceAccessor::open(const CanonPath & path, std::optional<File> create)
 {
     bool hasRoot = root.has_value();
@@ -234,6 +238,8 @@ void CreateMemoryRegularFile::isExecutable()
 
 void CreateMemoryRegularFile::preallocateContents(uint64_t len)
 {
+    if (len > std::numeric_limits<decltype(regularFile.contents)::size_type>::max())
+        throw Error("cannot preallocate contents for a file that is too large to fit in memory");
     regularFile.contents.reserve(len);
 }
 

@@ -1,10 +1,13 @@
-#include "nix/util/posix-source-accessor.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/local-fs-store.hh"
 #include "nix/util/compression.hh"
 #include "nix/store/derivations.hh"
 
 namespace nix {
+
+void LocalFSStoreConfig::anchor() {}
+
+void LocalFSStore::anchor() {}
 
 LocalFSStoreConfig::LocalFSStoreConfig(const std::filesystem::path & rootDir, const Params & params)
     : StoreConfig(params, FilePathType::Native)
@@ -27,23 +30,50 @@ LocalFSStore::LocalFSStore(const Config & config)
 {
 }
 
-struct LocalStoreAccessor : PosixSourceAccessor
+namespace {
+
+struct LocalStoreAccessor : SourceAccessor
 {
+private:
+    void anchor() override {};
+
+public:
+    ref<SourceAccessor> accessor;
     ref<LocalFSStore> store;
     bool requireValidPath;
 
     LocalStoreAccessor(ref<LocalFSStore> store, bool requireValidPath)
-        : PosixSourceAccessor(std::filesystem::path{store->config.realStoreDir.get()})
+        : accessor(makeFSSourceAccessor(std::filesystem::path{store->config.realStoreDir.get()}))
         , store(store)
         , requireValidPath(requireValidPath)
     {
     }
 
-    void requireStoreObject(const CanonPath & path)
+    void requireStoreObject(const StorePath & storePath)
     {
-        auto [storePath, rest] = store->toStorePath(store->storeDir + path.abs());
         if (requireValidPath && !store->isValidPath(storePath))
             throw InvalidPath("path '%1%' is not a valid store path", store->printStorePath(storePath));
+    }
+
+    static StorePath getStoreObjectPath(const CanonPath & path)
+    {
+        /* See special handling of isRoot() in maybeLstat. */
+        if (path.isRoot())
+            throw BadStorePath("path '%1%' is not a valid store path", path);
+        return StorePath(*path.begin());
+    }
+
+    static std::optional<StorePath> maybeGetStoreObjectPath(const CanonPath & path)
+    try {
+        return getStoreObjectPath(path);
+    } catch (BadStorePath &) {
+        /* FIXME: Stop using exceptions for control flow. */
+        return std::nullopt;
+    }
+
+    void requireStoreObject(const CanonPath & path)
+    {
+        requireStoreObject(getStoreObjectPath(path));
     }
 
     std::optional<Stat> maybeLstat(const CanonPath & path) override
@@ -53,28 +83,75 @@ struct LocalStoreAccessor : PosixSourceAccessor
         if (path.isRoot())
             return Stat{.type = tDirectory};
 
+        /* Querying existence should not fail for things like
+           `/nix/store/foo.nix`. The store cannot contain such files (unless
+           some weird impurities sneak in, but that's UB from nix's PoV). */
+        auto maybeStorePath = maybeGetStoreObjectPath(path);
+        if (!maybeStorePath)
+            return std::nullopt;
+        requireStoreObject(*maybeStorePath);
+        return accessor->maybeLstat(path);
+    }
+
+    Stat lstat(const CanonPath & path) override
+    {
+        /* Also allow `path` to point to the entire store, which is
+           needed for resolving symlinks. */
+        if (path.isRoot())
+            return Stat{.type = tDirectory};
+
         requireStoreObject(path);
-        return PosixSourceAccessor::maybeLstat(path);
+        return accessor->lstat(path);
     }
 
     DirEntries readDirectory(const CanonPath & path) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readDirectory(path);
+        return accessor->readDirectory(path);
+    }
+
+    void readDirectory(
+        const CanonPath & dirPath,
+        std::function<void(SourceAccessor & subdirAccessor, const CanonPath & subdirRelPath)> callback) override
+    {
+        requireStoreObject(dirPath);
+        return accessor->readDirectory(dirPath, std::move(callback));
     }
 
     void readFile(const CanonPath & path, Sink & sink, fun<void(uint64_t)> sizeCallback) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readFile(path, sink, sizeCallback);
+        return accessor->readFile(path, sink, sizeCallback);
     }
 
     std::string readLink(const CanonPath & path) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readLink(path);
+        return accessor->readLink(path);
+    }
+
+    std::string showPath(const CanonPath & path) override
+    {
+        return accessor->showPath(path);
+    }
+
+    std::optional<std::filesystem::path> getPhysicalPath(const CanonPath & path) override
+    {
+        return accessor->getPhysicalPath(path);
+    }
+
+    std::pair<CanonPath, std::optional<std::string>> getFingerprint(const CanonPath & path) override
+    {
+        return accessor->getFingerprint(path);
+    }
+
+    std::optional<time_t> getLastModified() override
+    {
+        return accessor->getLastModified();
     }
 };
+
+} // namespace
 
 ref<SourceAccessor> LocalFSStore::getFSAccessor(bool requireValidPath)
 {
@@ -96,7 +173,7 @@ std::shared_ptr<SourceAccessor> LocalFSStore::getFSAccessor(const StorePath & pa
         if (!pathExists(absPath))
             return nullptr;
     }
-    return std::make_shared<PosixSourceAccessor>(std::move(absPath));
+    return makeFSSourceAccessor(std::move(absPath));
 }
 
 const std::filesystem::path LocalFSStore::drvsLogDir = "drvs";
@@ -117,7 +194,7 @@ std::optional<std::string> LocalFSStore::getBuildLogExact(const StorePath & path
 
         else if (pathExists(logBz2Path)) {
             try {
-                return decompress("bzip2", readFile(logBz2Path));
+                return decompress(CompressionAlgo::bzip2, readFile(logBz2Path));
             } catch (Error &) {
             }
         }

@@ -162,14 +162,14 @@ PackageInfo::Outputs PackageInfo::queryOutputs(bool withPaths, bool onlyOutputsT
         auto errMsg = Error("this derivation has bad 'meta.outputsToInstall'");
         /* ^ this shows during `nix-env -i` right under the bad derivation */
         if (!outTI->isList())
-            throw errMsg;
+            throw std::move(errMsg);
         Outputs result;
         for (auto elem : outTI->listView()) {
             if (elem->type() != nString)
-                throw errMsg;
+                throw std::move(errMsg);
             auto out = outputs.find(elem->string_view());
             if (out == outputs.end())
-                throw errMsg;
+                throw std::move(errMsg);
             result.insert(*out);
         }
         return result;
@@ -393,7 +393,7 @@ static void getDerivations(
     EvalState & state,
     Value & vIn,
     const std::string & pathPrefix,
-    Bindings & autoArgs,
+    const Bindings & autoArgs,
     PackageInfos & drvs,
     Done & done,
     bool ignoreAssertionFailures)
@@ -464,7 +464,7 @@ void getDerivations(
     EvalState & state,
     Value & v,
     const std::string & pathPrefix,
-    Bindings & autoArgs,
+    const Bindings & autoArgs,
     PackageInfos & drvs,
     bool ignoreAssertionFailures)
 {

@@ -10,6 +10,8 @@ namespace nix {
 struct LocalFSStoreConfig : virtual StoreConfig
 {
 private:
+    void anchor() override;
+
     static Setting<std::optional<AbsolutePath>>
     makeRootDirSetting(LocalFSStoreConfig & self, std::optional<AbsolutePath> defaultValue)
     {
@@ -45,7 +47,7 @@ public:
         R"(
           Directory where Nix stores state.
 
-          Defaults to [`NIX_STATE_DIR`](@docroot@/command-ref/env-common.md#env-NIX_STATE_DIR) when [`root`](#store-setting-root) is not set.
+          Defaults to [`NIX_STATE_DIR`](@docroot@/command-ref/env-common.md#env-NIX_STATE_DIR) when [`root`](#@store-slug@-root) is not set.
         )",
     };
 
@@ -56,7 +58,7 @@ public:
         R"(
           Directory where Nix stores log files.
 
-          Defaults to [`NIX_LOG_DIR`](@docroot@/command-ref/env-common.md#env-NIX_LOG_DIR) when [`root`](#store-setting-root) is not set.
+          Defaults to [`NIX_LOG_DIR`](@docroot@/command-ref/env-common.md#env-NIX_LOG_DIR) when [`root`](#@store-slug@-root) is not set.
         )",
     };
 
@@ -67,7 +69,7 @@ public:
         R"(
           Physical path of the Nix store.
 
-          Defaults to [`store`](#store-setting-store) when [`root`](#store-setting-root) is not set.
+          Defaults to [`store`](#@store-slug@-store) when [`root`](#@store-slug@-root) is not set.
         )",
     };
 
@@ -87,6 +89,10 @@ struct alignas(8) /* Work around ASAN failures on i686-linux. */
                    virtual GcStore,
                    virtual LogStore
 {
+private:
+    void anchor() override;
+
+public:
     using Config = LocalFSStoreConfig;
 
     const Config & config;

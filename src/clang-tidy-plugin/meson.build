@@ -6,7 +6,7 @@ project(
     'cpp_std=c++23',
     'warning_level=2',
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -20,6 +20,7 @@ llvm_dep = dependency('LLVM', version : '>= 16', required : true)
 
 sources = files(
   'nix-clang-tidy-checks.cc',
+  'nix-using-namespace.cc',
 )
 
 # Build as a shared module (plugin) that can be loaded by clang-tidy --load

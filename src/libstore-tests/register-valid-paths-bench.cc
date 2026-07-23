@@ -22,7 +22,7 @@ static void BM_RegisterValidPathsDerivations(benchmark::State & state)
 
         auto tmpRoot = createTempDir();
         auto realStoreDir = tmpRoot / "nix/store";
-        std::filesystem::create_directories(realStoreDir);
+        createDirs(realStoreDir);
 
         std::shared_ptr<Store> store = openStore(fmt("local?root=%s", tmpRoot.string()));
         auto localStore = std::dynamic_pointer_cast<LocalStore>(store);
@@ -34,12 +34,13 @@ static void BM_RegisterValidPathsDerivations(benchmark::State & state)
             std::string drvName = fmt("register-valid-paths-bench-%d", i);
             auto drvPath = StorePath::random(drvName + ".drv");
 
-            Derivation drv;
-            drv.name = drvName;
-            drv.outputs.emplace("out", DerivationOutput{DerivationOutput::Deferred{}});
-            drv.platform = "x86_64-linux";
-            drv.builder = "foo";
-            drv.env["out"] = "";
+            Derivation drv{
+                .outputs = {{"out", DerivationOutput{DerivationOutput::Deferred{}}}},
+                .platform = "x86_64-linux",
+                .builder = "foo",
+                .env = {{"out", ""}},
+                .name = drvName,
+            };
             drv.fillInOutputPaths(*localStore);
 
             auto drvContents = drv.unparse(*localStore, /*maskOutputs=*/false);
@@ -66,7 +67,7 @@ static void BM_RegisterValidPathsDerivations(benchmark::State & state)
         state.PauseTiming();
         localStore.reset();
         store.reset();
-        std::filesystem::remove_all(tmpRoot);
+        deletePath(tmpRoot);
         state.ResumeTiming();
     }
 

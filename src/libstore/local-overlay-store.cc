@@ -10,6 +10,10 @@
 
 namespace nix {
 
+void LocalOverlayStoreConfig::anchor() {}
+
+void LocalOverlayStore::anchor() {}
+
 std::string LocalOverlayStoreConfig::doc()
 {
     return
@@ -262,7 +266,7 @@ LocalStore::VerificationResult LocalOverlayStore::verifyAllValidPaths(RepairFlag
     StorePathSet done;
 
     auto existsInStoreDir = [&](const StorePath & storePath) {
-        return pathExists((config->realStoreDir.get() / storePath.to_string()).string());
+        return pathExists(config->realStoreDir.get() / storePath.to_string());
     };
 
     bool errors = false;

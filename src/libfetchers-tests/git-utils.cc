@@ -1,5 +1,7 @@
 #include "nix/fetchers/git-utils.hh"
 #include "nix/util/file-system.hh"
+#include "nix/util/tests/gmock-matchers.hh"
+
 #include <gmock/gmock.h>
 #include <git2/global.h>
 #include <git2/repository.h>
@@ -19,7 +21,7 @@ namespace nix::fetchers {
 class GitUtilsTest : public ::testing::Test
 {
     // We use a single repository for all tests.
-    std::unique_ptr<AutoDelete> delTmpDir;
+    AutoDelete delTmpDir;
 
 protected:
     std::filesystem::path tmpDir;
@@ -27,27 +29,19 @@ protected:
 public:
     void SetUp() override
     {
-        tmpDir = createTempDir();
-        delTmpDir = std::make_unique<AutoDelete>(tmpDir, true);
-
-        // Create the repo with libgit2
-        git_libgit2_init();
-        git_repository * repo = nullptr;
-        auto r = git_repository_init(&repo, tmpDir.string().c_str(), 0);
-        ASSERT_EQ(r, 0);
-        git_repository_free(repo);
+        tmpDir = createTempDir() / "test-git-repo";
+        GitRepo::openRepo(tmpDir, {.create = true});
+        delTmpDir = AutoDelete(tmpDir, true);
     }
 
     void TearDown() override
     {
-        // Destroy the AutoDelete, triggering removal
-        // not AutoDelete::reset(), which would cancel the deletion.
-        delTmpDir.reset();
+        delTmpDir.deletePath();
     }
 
     ref<GitRepo> openRepo()
     {
-        return GitRepo::openRepo(tmpDir, {.create = true});
+        return GitRepo::openRepo(tmpDir, {.create = false});
     }
 
     std::string getRepoName() const
@@ -92,13 +86,24 @@ TEST_F(GitUtilsTest, sink_basic)
 
     auto result = repo->dereferenceSingletonDirectory(sink->flush());
     auto accessor = repo->getAccessor(result, {}, getRepoName());
-    auto entries = accessor->readDirectory(CanonPath::root);
-    ASSERT_EQ(entries.size(), 5u);
-    ASSERT_EQ(accessor->readFile(CanonPath("hello")), "hello world");
-    ASSERT_EQ(accessor->readFile(CanonPath("bye")), "thanks for all the fish");
-    ASSERT_EQ(accessor->readLink(CanonPath("bye-link")), "bye");
-    ASSERT_EQ(accessor->readDirectory(CanonPath("empty")).size(), 0u);
-    ASSERT_EQ(accessor->readFile(CanonPath("links/foo")), "hello world");
+
+    ASSERT_THAT(
+        accessor,
+        testing::HasDirectory(
+            CanonPath::root,
+            std::set<std::string>{
+                "hello",
+                "bye",
+                "bye-link",
+                "empty",
+                "links",
+            }));
+
+    ASSERT_THAT(accessor, testing::HasContents(CanonPath("hello"), "hello world"));
+    ASSERT_THAT(accessor, testing::HasContents(CanonPath("bye"), "thanks for all the fish"));
+    ASSERT_THAT(accessor, testing::HasSymlink(CanonPath("bye-link"), "bye"));
+    ASSERT_THAT(accessor, testing::HasDirectory(CanonPath("empty"), std::set<std::string>{}));
+    ASSERT_THAT(accessor, testing::HasContents(CanonPath("links/foo"), "hello world"));
 };
 
 TEST_F(GitUtilsTest, sink_hardlink)
@@ -117,11 +122,196 @@ TEST_F(GitUtilsTest, sink_hardlink)
         sink->flush();
         FAIL() << "Expected an exception";
     } catch (const nix::Error & e) {
-        ASSERT_THAT(e.msg(), testing::HasSubstr("does not exist"));
-        ASSERT_THAT(e.msg(), testing::HasSubstr("/hello"));
-        ASSERT_THAT(e.msg(), testing::HasSubstr("foo-1.1/link"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("does not exist"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("/hello"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("foo-1.1/link"));
     }
 };
+
+TEST_F(GitUtilsTest, sink_no_parent_dir)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createRegularFile(CanonPath("foo/bar"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "boom", /*executable=*/false);
+            });
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_no_parent_dir_symlink)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createSymlink(CanonPath("foo/bar"), "target");
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_no_parent_dir_hardlink)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createHardlink(CanonPath("foo/bar"), CanonPath("foo"));
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_replacing_empty_directory)
+{
+    auto repo = openRepo();
+    auto sink = repo->getFileSystemObjectSink();
+
+    sink->createDirectory(CanonPath::root);
+    sink->createDirectory(CanonPath("foo"));
+    sink->createDirectory(CanonPath("foo/bar"));
+    /* Under tarball unpacking semantics, creating the same directories
+       (implicitly or explicitly) is fine. */
+    sink->createDirectory(CanonPath("foo/bar"));
+    sink->createDirectory(CanonPath("foo"));
+
+    sink->createRegularFile(CanonPath("foo/bar"), [](CreateRegularFileSink & fileSink) {
+        writeString(fileSink, "test", /*executable=*/false);
+    });
+
+    auto accessor = repo->getAccessor(sink->flush(), {}, getRepoName());
+
+    ASSERT_THAT(accessor, testing::HasDirectory(CanonPath("foo"), std::set<std::string>{"bar"}));
+    ASSERT_THAT(accessor, testing::HasContents(CanonPath("foo/bar"), "test"));
+}
+
+TEST_F(GitUtilsTest, sink_replacing_non_empty_directory)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+            sink->createDirectory(CanonPath("foo"));
+            sink->createDirectory(CanonPath("foo/bar"));
+
+            /* This fails. libarchive (and other tarball unpackers) doesn't recursive unlink existing non-empty
+               directories.
+               https://github.com/libarchive/libarchive/blob/761652401fe35fca9744607a0cf0009afbf04f42/libarchive/archive_write_disk_posix.c#L3411-L3417
+             */
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(
+            testing::HasSubstrIgnoreANSIMatcher("cannot create 'foo', conflicting non-empty directory")));
+}
+
+TEST_F(GitUtilsTest, sink_hardlink_to_directory)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+            sink->createDirectory(CanonPath("foo"));
+            sink->createHardlink(CanonPath("bar"), CanonPath("foo"));
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(
+            testing::HasSubstrIgnoreANSIMatcher("cannot create a hard link to a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_hardlink_to_directory_root)
+{
+    auto repo = openRepo();
+    auto sink = repo->getFileSystemObjectSink();
+
+    sink->createDirectory(CanonPath::root);
+    sink->createDirectory(CanonPath("foo"));
+    sink->createHardlink(CanonPath("bar"), CanonPath::root);
+
+    auto accessor = repo->getAccessor(sink->flush(), {}, getRepoName());
+
+    /* FIXME: Why does it behave this way? This seems like a bug. */
+    ASSERT_THAT(
+        accessor,
+        testing::HasDirectory(
+            CanonPath::root,
+            std::set<std::string>{
+                "foo",
+            }));
+}
+
+TEST_F(GitUtilsTest, sink_hardlink_to_self)
+{
+    /* Here we are more strict than libarchive, which only warns on cyclic hardlinks.
+       https://github.com/libarchive/libarchive/blob/761652401fe35fca9744607a0cf0009afbf04f42/libarchive/archive_write_disk_posix.c#L632-L641
+     */
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+            sink->createHardlink(CanonPath("foo"), CanonPath("foo"));
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("/foo")));
+}
+
+TEST_F(GitUtilsTest, sink_non_directory_root)
+{
+    /* FIXME: Allow non-directory roots. GitFileSystemObjectSink is too tarball-brained. */
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createRegularFile(CanonPath::root, [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(
+            testing::HasSubstrIgnoreANSIMatcher("cannot create a file at the root of the git repository")));
+}
 
 TEST_F(GitUtilsTest, peel_reference)
 {

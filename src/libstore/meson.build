@@ -9,7 +9,7 @@ project(
     'errorlogs=true', # Please print logs for tests that fail
     'localstatedir=/nix/var',
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -29,8 +29,7 @@ subdir('nix-meson-build-support/default-system-cpu')
 configdata_pub.set_quoted(
   'NIX_LOCAL_SYSTEM',
   nix_system_cpu + '-' + host_machine.system(),
-  description : 'This is the system name Nix expects for local running instance of Nix.\n\n'
-    + 'See the "system" setting for additional details',
+  description : 'This is the system name Nix expects for local running instance of Nix.\n\n' + 'See the "system" setting for additional details',
 )
 
 deps_private_maybe_subproject = []
@@ -72,6 +71,8 @@ configdata_priv.set('CAN_LINK_SYMLINK', can_link_symlink.to_int())
 check_funcs = [
   'posix_fallocate',
   'statvfs',
+  'open_tree',
+  'move_mount',
 ]
 foreach funcspec : check_funcs
   define_name = 'HAVE_' + funcspec.underscorify().to_upper()
@@ -84,9 +85,11 @@ if host_machine.system() == 'linux'
   configdata_priv.set('HAVE_LANDLOCK', has_landlock.to_int())
 endif
 
-has_acl_support = cxx.has_header('sys/xattr.h') \
-  and cxx.has_function('llistxattr') \
-  and cxx.has_function('lremovexattr')
+has_acl_support = cxx.has_header('sys/xattr.h') and cxx.has_function(
+  'llistxattr',
+) and cxx.has_function(
+  'lremovexattr',
+)
 # Used in public header. Affects ABI!
 configdata_pub.set(
   'NIX_SUPPORT_ACL',
@@ -173,40 +176,15 @@ endif
 
 configdata_pub.set('NIX_WITH_AWS_AUTH', s3_aws_auth.enabled().to_int())
 
-subdir('nix-meson-build-support/generate-header')
-
-generated_headers = []
-foreach header : [
-  'schema.sql',
-  'ca-specific-schema.sql',
-]
-  generated_headers += gen_header.process(header)
-endforeach
-
 busybox = find_program(get_option('sandbox-shell'), required : false)
-
-configdata_priv.set(
-  'HAVE_EMBEDDED_SANDBOX_SHELL',
-  get_option('embedded-sandbox-shell').to_int(),
-)
 
 if get_option('embedded-sandbox-shell')
   configdata_priv.set_quoted('SANDBOX_SHELL', '__embedded_sandbox_shell__')
+  configdata_priv.set_quoted('EMBEDDED_SANDBOX_SHELL_PATH', busybox.full_path())
+  configdata_priv.set('HAVE_EMBEDDED_SANDBOX_SHELL', 1)
 elif busybox.found()
   configdata_priv.set_quoted('SANDBOX_SHELL', busybox.full_path())
-endif
-
-if get_option('embedded-sandbox-shell')
-  hexdump = find_program('hexdump', native : true)
-  embedded_sandbox_shell_gen = custom_target(
-    'embedded-sandbox-shell.gen.hh',
-    command : [ hexdump, '-v', '-e', '1/1 "0x%x," "\n"' ],
-    input : busybox.full_path(),
-    output : 'embedded-sandbox-shell.gen.hh',
-    capture : true,
-    feed : true,
-  )
-  generated_headers += embedded_sandbox_shell_gen
+  configdata_priv.set('HAVE_EMBEDDED_SANDBOX_SHELL', 0)
 endif
 
 fs = import('fs')
@@ -220,15 +198,14 @@ path_opts = [
   'libdir',
   'includedir',
   'libexecdir',
+  'localstatedir',
   # Homecooked Nix directories.
   'store-dir',
-  'localstatedir',
   'log-dir',
 ]
 # For your grepping pleasure, this loop sets the following variables that aren't mentioned
 # literally above:
 # store_dir
-# localstatedir
 # log_dir
 # profile_dir
 foreach optname : path_opts
@@ -354,6 +331,7 @@ sources = files(
   'store-dir-config.cc',
   'store-reference.cc',
   'store-registration.cc',
+  'submit-store.cc',
   'uds-remote-store.cc',
   'worker-protocol-connection.cc',
   'worker-protocol.cc',
@@ -370,6 +348,14 @@ if host_machine.system() == 'linux'
   subdir('linux')
 endif
 
+if host_machine.system() == 'freebsd'
+  subdir('freebsd')
+endif
+
+if host_machine.system() == 'darwin'
+  subdir('darwin')
+endif
+
 if host_machine.system() == 'windows'
   subdir('windows')
 else
@@ -381,7 +367,6 @@ subdir('nix-meson-build-support/windows-version')
 
 this_library = library(
   'nixstore',
-  generated_headers,
   sources,
   config_priv_h,
   soversion : nix_soversion,
@@ -399,13 +384,7 @@ libraries_private = []
 
 extra_pkg_config_variables = {
   'storedir' : get_option('store-dir'),
+  'localstatedir' : get_option('localstatedir'),
 }
-
-# Working around https://github.com/mesonbuild/meson/issues/13584
-if host_machine.system() != 'darwin'
-  extra_pkg_config_variables += {
-    'localstatedir' : get_option('localstatedir'),
-  }
-endif
 
 subdir('nix-meson-build-support/export')
