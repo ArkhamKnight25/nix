@@ -7,8 +7,11 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 
 namespace nix {
+
+struct StoreConfig;
 
 /**
  * @note Sometimes this is owned by the `Worker`, and sometimes it is
@@ -50,9 +53,42 @@ struct HookInstance
      */
     std::function<void()> onKillChild;
 
-    HookInstance(const Strings & buildHook, std::chrono::milliseconds timeout);
+    /**
+     * Run the program named by the `build-hook` setting, in a child
+     * process of this one.
+     */
+    static std::unique_ptr<HookInstance> external(const Strings & buildHook, std::chrono::milliseconds timeout);
+
+    /**
+     * Run Nix's own build hook in a fork of this process. Same
+     * protocol, same pipes, but no `exec`, so the child does not have
+     * to be told the settings and does not have to load the plugins
+     * again. The child opens its own store from `storeConfig`: a
+     * forked child must not use the parent's.
+     */
+    static std::unique_ptr<HookInstance> builtin(const StoreConfig & storeConfig, std::chrono::milliseconds timeout);
 
     ~HookInstance();
+
+private:
+
+    /**
+     * Creates the three pipes. The child is started by the factory
+     * functions above.
+     */
+    HookInstance();
+
+    /**
+     * Take ownership of a started child: arrange for it to be killed
+     * with this instance, and close the ends of the pipes that belong
+     * to it.
+     */
+    void adopt(pid_t childPid, std::chrono::milliseconds timeout);
+
+    /**
+     * Put the pipes where the hook expects them. Runs in the child.
+     */
+    void redirectChildFds();
 };
 
 } // namespace nix
