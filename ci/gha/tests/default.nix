@@ -332,6 +332,8 @@ rec {
       functional_user
       githubFlakes
       nix-docker
+      remoteBuilds
+      remoteBuildsSshNg
       tarballFlakes
       ;
   };
