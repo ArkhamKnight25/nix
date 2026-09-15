@@ -299,6 +299,7 @@ sources = files(
   'local-overlay-store.cc',
   'local-store.cc',
   'log-store.cc',
+  'machine-selection.cc',
   'machines.cc',
   'make-content-addressed.cc',
   'misc.cc',
