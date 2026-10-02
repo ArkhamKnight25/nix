@@ -61,4 +61,35 @@ TEST(ExecutablePath, elementyElemNormalize)
     EXPECT_EQ(s2, OS_STR("." PATH_VAR_SEP "." PATH_VAR_SEP "." PATH_VAR_SEP "."));
 }
 
+TEST(ExecutablePath, findPathAbsolute)
+{
+    ExecutablePath p{{OS_STR("/dir")}};
+    // A pathname containing a slash is not searched for in the path,
+    // and is returned whether or not anything deems it executable.
+    auto path = p.findPath(std::filesystem::path("/foo/bar"), [](auto &) { return false; });
+    EXPECT_EQ(path, std::filesystem::path("/foo/bar"));
+}
+
+TEST(ExecutablePath, findPathRelativeWithSlash)
+{
+    ExecutablePath p{{OS_STR("/dir")}};
+    auto path = p.findPath(std::filesystem::path("foo/bar"), [](auto &) { return false; });
+    EXPECT_EQ(path, std::filesystem::path("foo/bar"));
+}
+
+TEST(ExecutablePath, findPathSearches)
+{
+    ExecutablePath p{{OS_STR("/no"), OS_STR("/yes")}};
+    auto path = p.findPath(std::filesystem::path("exe"), [](const std::filesystem::path & candidate) {
+        return candidate.string().find("yes") != std::string::npos;
+    });
+    EXPECT_EQ(path, (std::filesystem::path("/yes") / "exe").lexically_normal());
+}
+
+TEST(ExecutablePath, findPathNotFoundThrows)
+{
+    ExecutablePath p{{OS_STR("/dir")}};
+    EXPECT_THROW(p.findPath(std::filesystem::path("exe"), [](auto &) { return false; }), ExecutableLookupError);
+}
+
 } // namespace nix
