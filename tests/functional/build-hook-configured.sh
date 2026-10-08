@@ -19,8 +19,11 @@ rm -f "$ran"
 # `decline-permanently` so the parent drops the hook instead of reusing
 # it for the next derivation: `dependencies.nix` has five, and a hook
 # that answered only the first probe would leave the second unanswered.
+#
+# `/bin/sh`, not `/usr/bin/env`: on CI this runs inside the Nix build
+# sandbox, which provides `/bin/sh` and nothing under `/usr/bin`.
 cat > "$hook" <<EOF
-#!/usr/bin/env bash
+#!/bin/sh
 echo ran >> "$ran"
 echo "# decline-permanently" >&2
 EOF
