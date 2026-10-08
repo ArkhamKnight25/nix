@@ -387,18 +387,6 @@ void mainWrapped(int argc, char ** argv)
     /* This must be called before Sentry since both initialize OpenSSL. */
     initLibUtil();
 
-    /* Set the build hook location
-
-       For builds we perform a self-invocation, so Nix has to be
-       self-aware. That is, it has to know where it is installed. We
-       don't think it's sentient.
-     */
-    settings.getWorkerSettings().buildHook.setDefault(
-        Strings{
-            getNixBin({}).string(),
-            "__build-remote",
-        });
-
     initNix();
     initGC();
     flakeSettings.configureEvalSettings(evalSettings);
