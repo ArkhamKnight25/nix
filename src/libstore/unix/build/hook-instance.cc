@@ -6,6 +6,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/util/strings.hh"
 #include "nix/util/executable-path.hh"
+#include "nix/util/signals.hh"
 #include "nix/util/util.hh"
 
 #ifdef __linux__
@@ -239,7 +240,16 @@ std::unique_ptr<HookInstance> HookInstance::builtin(const StoreConfig & storeCon
            report failures through the logger, as `handleExceptions` does
            for `nix __build-remote`. */
         try {
+            /* Inherited from the parent; this child has not been interrupted. */
+            setInterrupted(false);
+
             closeExtraHookFDs(savedNsFds);
+
+            /* Block SIGTERM and take it on a thread, as `initNix` does, so
+               `Pid::kill`'s SIGTERM becomes an interrupt instead of ending
+               us mid-write. `nix __build-remote` reset it to SIG_DFL and
+               died at once. */
+            unix::startSignalHandlerThread();
 
             /* Ensure we don't get any SSH passphrase or host key popups. */
             unsetenv("DISPLAY");
