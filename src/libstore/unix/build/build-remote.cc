@@ -51,11 +51,6 @@ void serveBuildHook(
     auto machines = Machine::parseConfig({settings.thisSystem}, settings.getWorkerSettings().builders);
     debug("got %d remote builders", machines.size());
 
-    if (machines.empty()) {
-        reply(toParent, "# decline-permanently");
-        return;
-    }
-
     std::optional<StorePath> drvPath;
     std::string storeUri;
 
@@ -73,6 +68,15 @@ void serveBuildHook(
         auto neededSystem = readString(from);
         drvPath = store->parseStorePath(readString(from));
         auto requiredFeatures = readStrings<StringSet>(from);
+
+        /* Answer the first request rather than exiting before it
+           arrives: the parent writes it as soon as it has started us,
+           and a write to a hook that has already exited fails with
+           EPIPE, which it reports as the hook dying. */
+        if (machines.empty()) {
+            reply(toParent, "# decline-permanently");
+            return;
+        }
 
         /* It would be possible to build locally after some builds clear out,
            so don't show the warning now: */
