@@ -61,6 +61,7 @@ suites = [
       'build-cores.sh',
       'build-delete.sh',
       'build-dry.sh',
+      'build-hook-builtin.sh',
       'build-hook-configured.sh',
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
