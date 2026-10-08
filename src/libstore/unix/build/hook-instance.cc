@@ -7,10 +7,16 @@
 #include "nix/util/strings.hh"
 #include "nix/util/executable-path.hh"
 #include "nix/util/signals.hh"
+#include "nix/util/util.hh"
 
 #include <chrono>
+#include <climits>
+#include <filesystem>
+#include <string_view>
 #include <utility>
+#include <vector>
 
+#include <fcntl.h>
 #include <unistd.h>
 
 namespace nix {
@@ -39,15 +45,61 @@ void HookInstance::redirectChildFds()
         throw SysError("dupping builder's stdout/stderr");
 }
 
-/* Close every inherited descriptor except the five the protocol uses.
+/* Whether `path` is one of SQLite's files: a database, or its
+   write-ahead log, shared-memory index or rollback journal. */
+static bool isSQLiteFile(std::string_view path)
+{
+    for (auto suffix : {".sqlite", ".sqlite-wal", ".sqlite-shm", ".sqlite-journal"})
+        if (hasSuffix(path, suffix))
+            return true;
+    return false;
+}
+
+/* Close every inherited descriptor except the five the protocol uses
+   and the ones SQLite holds.
+
    `O_CLOEXEC` did this for the exec'd hook; a fork keeps them, and the
    copies would pin the parent's `PathLocks`, which release by `close()`
    alone. `unix::closeExtraFDs()` keeps only 0-2, which would take the
-   builder-output pipes on 4 and 5 with it. */
+   builder-output pipes on 4 and 5 with it.
+
+   SQLite's descriptors have to stay open. Its unix VFS keeps per-process
+   lock bookkeeping for every open database, including the descriptor of
+   the WAL's shared-memory file, and a fork copies all of it. When this
+   child opens its own connection to a database the parent already has
+   open, SQLite reuses that bookkeeping; with the descriptor closed every
+   lock it takes fails, and reads spin on `SQLITE_PROTOCOL` forever. */
 static void closeExtraHookFDs()
 {
-    close(3);
-    for (int fd = 6, maxFd = static_cast<int>(sysconf(_SC_OPEN_MAX)); fd < maxFd; ++fd)
+    auto keep = [](int fd) { return fd <= 2 || fd == 4 || fd == 5; };
+
+    std::vector<int> toClose;
+
+#ifdef __linux__
+    for (auto & entry : std::filesystem::directory_iterator("/proc/self/fd")) {
+        int fd = std::stoi(entry.path().filename().string());
+        if (keep(fd))
+            continue;
+        std::error_code ec;
+        auto target = std::filesystem::read_symlink(entry.path(), ec);
+        if (!ec && isSQLiteFile(target.string()))
+            continue;
+        toClose.push_back(fd);
+    }
+#else
+    for (int fd = 3, maxFd = static_cast<int>(sysconf(_SC_OPEN_MAX)); fd < maxFd; ++fd) {
+        if (keep(fd))
+            continue;
+#  ifdef F_GETPATH
+        char path[PATH_MAX];
+        if (fcntl(fd, F_GETPATH, path) == 0 && isSQLiteFile(path))
+            continue;
+#  endif
+        toClose.push_back(fd);
+    }
+#endif
+
+    for (auto fd : toClose)
         close(fd);
 }
 
