@@ -168,7 +168,21 @@ std::unique_ptr<HookInstance> HookInstance::builtin(const StoreConfig & storeCon
         store->init();
 
         FdSource source(STDIN_FILENO);
-        serveBuildHook(store, maxBuildJobs, source, STDERR_FILENO, 5);
+
+        /* Report failures the way `nix __build-remote` has them reported
+           by `handleExceptions`: through the logger. Once the parent has
+           accepted a build it only forwards what the JSON logger writes,
+           so an exception left to `startProcess` would come out as plain
+           text and be dropped, hiding the reason the build failed. */
+        try {
+            serveBuildHook(store, maxBuildJobs, source, STDERR_FILENO, 5);
+        } catch (BaseError & e) {
+            logError(e.info());
+            _exit(1);
+        } catch (std::exception & e) {
+            printError("error: %s", e.what());
+            _exit(1);
+        }
 
         _exit(0);
     });
