@@ -12,8 +12,9 @@ namespace nix {
  * `toParent`, dispatching accepted builds to one of the machines named
  * by the `builders` setting.
  *
- * This is the body of `nix __build-remote`. It runs in a child process
- * of the Nix that wants the build.
+ * This is the body of `nix __build-remote` and of the built-in hook
+ * that `HookInstance::builtin` forks. It runs in a child process of the
+ * Nix that wants the build.
  *
  * Returns once `from` reaches EOF or yields a word other than `"try"`,
  * or once one accepted build has finished and its outputs have been

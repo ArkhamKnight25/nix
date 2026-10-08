@@ -2,6 +2,7 @@
 ///@file
 
 #include <filesystem>
+#include <vector>
 
 namespace nix {
 
@@ -24,6 +25,15 @@ void remountReadOnlyWritable(const std::filesystem::path & path);
  * one. Ignored if `tryEnterPrivateMountNamespace()` never succeeded.
  */
 void restoreMountNamespace();
+
+/**
+ * Move the descriptors that `restoreMountNamespace()` and the process
+ * spawner use to return to the parent mount namespace to numbers of at
+ * least `minFd`, and return them; empty if we never left it. For a fork
+ * that dup2()s onto low descriptors and closes the rest, then still
+ * starts processes.
+ */
+std::vector<int> moveSavedMountNamespaceFds(int minFd);
 
 /**
  * Cause this thread to try to not share any FS attributes with the main

@@ -408,6 +408,17 @@ public:
         return value != v2;
     }
 
+    /**
+     * Whether `value` is still the default passed to the constructor.
+     * `setDefault()` changes `value`, not `defaultValue`, so a value set
+     * that way does not count. Unlike `isOverridden()`, this survives
+     * `Config::resetOverridden()`.
+     */
+    bool isDefault() const
+    {
+        return value == defaultValue;
+    }
+
     template<typename U>
     void operator=(const U & v)
     {
