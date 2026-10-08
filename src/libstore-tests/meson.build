@@ -55,6 +55,7 @@ sources = files(
   'local-fs-store.cc',
   'local-overlay-store.cc',
   'local-store.cc',
+  'machine-selection.cc',
   'machines.cc',
   'main.cc',
   'nar-info-disk-cache.cc',
