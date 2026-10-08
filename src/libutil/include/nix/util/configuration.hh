@@ -408,6 +408,20 @@ public:
         return value != v2;
     }
 
+    /**
+     * Whether this setting still holds the value it was constructed or
+     * `setDefault()`ed with.
+     *
+     * Unlike `isOverridden()`, which only records whether the setting
+     * was ever assigned, this survives `Config::resetOverridden()` —
+     * so it still answers for a setting that came from the system
+     * `nix.conf`.
+     */
+    bool isDefault() const
+    {
+        return value == defaultValue;
+    }
+
     template<typename U>
     void operator=(const U & v)
     {

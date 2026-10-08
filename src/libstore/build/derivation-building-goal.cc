@@ -1235,11 +1235,13 @@ HookReply DerivationBuildingGoal::tryBuildHook(const DerivationOptions<StorePath
 
     if (!worker.hook) {
         auto timeout = std::chrono::milliseconds(worker.settings.buildHookKillTimeout);
-        /* Only a hook the user asked for needs to be a separate
-           program; ours can just be a fork of this process. */
-        worker.hook = worker.settings.buildHook.isOverridden()
-                          ? HookInstance::external(worker.settings.buildHook, timeout)
-                          : HookInstance::builtin(worker.store.config, timeout);
+        /* Only a hook the user configured needs to be a separate
+           program. Not `isOverridden()`: `loadConfFile` clears that
+           flag after applying the system `nix.conf`, which is the only
+           configuration a daemon reads. */
+        worker.hook = worker.settings.buildHook.isDefault()
+                          ? HookInstance::builtin(worker.store.config, timeout)
+                          : HookInstance::external(worker.settings.buildHook, timeout);
     }
 
     try {
