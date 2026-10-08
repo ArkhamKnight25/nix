@@ -6,6 +6,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/util/strings.hh"
 #include "nix/util/executable-path.hh"
+#include "nix/util/signals.hh"
 
 #include <chrono>
 #include <utility>
@@ -135,8 +136,18 @@ std::unique_ptr<HookInstance> HookInstance::builtin(const StoreConfig & storeCon
     auto hook = std::unique_ptr<HookInstance>(new HookInstance());
 
     auto childPid = startProcess([&]() {
+        /* Inherited from the parent, and nothing here will clear it. */
+        setInterrupted(false);
+
         hook->redirectChildFds();
         closeExtraHookFDs();
+
+        /* `commonChildInit` restored the pre-`initNix` signal mask, so
+           SIGTERM is unblocked with no thread to consume it. The exec'd
+           hook gets its handling back from `initNix`; without this one
+           `Pid::kill` would kill us outright and
+           `build-hook-kill-timeout` would mean nothing. */
+        unix::startSignalHandlerThread();
 
         /* The parent parses our output, so it has to be JSON. */
         logger = makeJSONLogger(getStandardError()).release();
