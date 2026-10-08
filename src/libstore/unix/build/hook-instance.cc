@@ -6,6 +6,7 @@
 #include "child-impl.hh"
 #include "nix/util/strings.hh"
 #include "nix/util/executable-path.hh"
+#include "nix/util/signals.hh"
 #include "nix/util/util.hh"
 
 #ifdef __linux__
@@ -239,7 +240,13 @@ std::unique_ptr<HookInstance> HookInstance::builtin(const StoreConfig & storeCon
         logger = makeJSONLogger(getStandardError()).release();
 
         try {
+            /* Inherited from the parent; this child has not been interrupted. */
+            setInterrupted(false);
+
             closeExtraHookFDs(savedNsFds);
+
+            /* As `initNix` does: SIGTERM becomes an interrupt. */
+            unix::startSignalHandlerThread();
 
             /* Ensure we don't get any SSH passphrase or host key popups. */
             unsetenv("DISPLAY");
