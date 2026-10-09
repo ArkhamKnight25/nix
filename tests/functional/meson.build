@@ -65,6 +65,7 @@ suites = [
       'build-hook-builtin-ssh.sh',
       'build-hook-builtin-ssh-root.sh',
       'build-hook-configured.sh',
+      'build-hook-program.sh',
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
       'build-remote-input-addressed.sh',
