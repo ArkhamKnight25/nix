@@ -20,6 +20,7 @@
 #include "nix/store/globals.hh"
 #include "nix/store/machines.hh"
 #include "nix/util/current-process.hh"
+#include "nix/util/finally.hh"
 
 #include <chrono>
 #include <algorithm>
@@ -1223,14 +1224,19 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
 #ifdef _WIN32 // TODO enable build hook on Windows
     co_return rpDecline;
 #else
+    /* One goal talks to the hook at a time. While another goal awaits
+       its reply, wait for it without blocking the worker. */
+    while (worker.hookBusy) {
+        worker.waitForHook(shared_from_this());
+        co_await Suspend{};
+    }
+
     /* This should use `worker.evalStore`, but per #13179 the build hook
        doesn't work with eval store anyways. */
     if (worker.settings.buildHook.get().empty() || !worker.tryBuildHook || !worker.store.isValidPath(drvPath))
         co_return rpDecline;
 
-    /* Take the worker's idle hook, or start one. While this goal waits
-       for a reply the worker runs other goals; they find no idle hook
-       and start their own. */
+    /* Take the worker's hook, or start one. */
     std::unique_ptr<HookInstance> hook = std::move(worker.hook);
     if (!hook) {
         auto timeout = std::chrono::milliseconds(worker.settings.buildHookKillTimeout);
@@ -1253,6 +1259,9 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
             hook = HookInstance::builtin(worker.store.config, timeout);
         }
     }
+
+    worker.hookBusy = true;
+    Finally release([&]() { worker.releaseHook(); });
 
     /* Send the request to the hook. */
     try {
@@ -1323,16 +1332,13 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
     debug("hook reply is '%1%'", *reply);
 
     if (*reply == "decline" || *reply == "postpone") {
-        /* Keep the hook for the next request, unless another goal has
-           already left one. */
+        /* Keep the hook for the next request. */
         hook->onKillChild = nullptr;
-        if (!worker.hook)
-            worker.hook = std::move(hook);
+        worker.hook = std::move(hook);
         co_return *reply == "decline" ? rpDecline : rpPostpone;
     }
     if (*reply == "decline-permanently") {
         worker.tryBuildHook = false;
-        worker.hook.reset();
         co_return rpDecline;
     }
     if (*reply != "accept")
