@@ -1270,8 +1270,10 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
        blocking read, so that other goals keep running while the hook
        selects a machine and connects to it. The reply is a line `# word`;
        after `# accept` one more line names the machine. Any other line
-       is a JSON log message or plain output from the hook. */
-    hook->onKillChild = [this]() { worker.childTerminated(this); };
+       is a JSON log message or plain output from the hook. The category
+       is explicit because the hook can be destroyed with this coroutine
+       inside `~Goal`, where `jobCategory()` is pure virtual. */
+    hook->onKillChild = [this]() { worker.childTerminated(this, JobCategory::Build); };
     worker.childStarted(shared_from_this(), {hook->fromHook.readSide.get()}, false, false);
 
     std::optional<std::string> reply;
