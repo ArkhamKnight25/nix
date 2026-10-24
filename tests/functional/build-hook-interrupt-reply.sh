@@ -31,11 +31,17 @@ nix-build --no-out-link -E '
 ' 2> "$TEST_ROOT/log" &
 client=$!
 
+# Do not leave the client and the hook running if a check fails.
+stop() {
+    kill -KILL "$client" 2> /dev/null || true
+    xargs kill -KILL < "$pidFile" 2> /dev/null || true
+}
+
 for _ in $(seq 60); do
     [[ -s $pidFile ]] && break
     sleep 0.5
 done
-[[ -s $pidFile ]] || fail "the hook did not start"
+[[ -s $pidFile ]] || { stop; fail "the hook did not start"; }
 hookPid=$(< "$pidFile")
 
 # A background job ignores SIGINT; Nix treats SIGTERM the same way.
@@ -45,7 +51,7 @@ for _ in $(seq 20); do
     kill -0 "$client" 2> /dev/null || break
     sleep 1
 done
-if kill -0 "$client" 2> /dev/null; then fail "the client is still running"; fi
+if kill -0 "$client" 2> /dev/null; then stop; fail "the client is still running"; fi
 status=0
 wait "$client" || status=$?
 
@@ -57,4 +63,4 @@ for _ in $(seq 20); do
     kill -0 "$hookPid" 2> /dev/null || break
     sleep 1
 done
-if kill -0 "$hookPid" 2> /dev/null; then fail "the hook is still running"; fi
+if kill -0 "$hookPid" 2> /dev/null; then stop; fail "the hook is still running"; fi
