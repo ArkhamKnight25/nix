@@ -137,6 +137,17 @@ public:
         "build-hook-kill-timeout",
         "How long to wait in milliseconds for build hooks to exit on interrupt before sending SIGKILL."};
 
+    Setting<unsigned int> maxBuildHooks{
+        this,
+        4,
+        "max-build-hooks",
+        R"(
+          The maximum number of build hooks that are deciding whether to accept a build, or idle, at the same time.
+          A hook that has accepted a build does not count.
+          When this many are deciding, other derivations wait for one of them to reply.
+          `0` is the same as `1`.
+        )"};
+
     Setting<std::string> builders{
         this,
         "@" + (nixConfDir() / "machines").string(),

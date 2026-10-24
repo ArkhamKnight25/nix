@@ -133,6 +133,11 @@ private:
     WeakGoals wantingToSubstitute;
 
     /**
+     * Goals waiting for a build hook.
+     */
+    WeakGoals wantingHook;
+
+    /**
      * Child processes currently running.
      */
     std::list<Child> children;
@@ -247,12 +252,18 @@ public:
 
 #ifndef _WIN32 // TODO Enable building on Windows
     /**
-     * A build hook that is not talking to any goal, kept for the next
-     * goal that needs one. A goal that is awaiting a hook's reply owns
-     * that hook itself; see `DerivationBuildingGoal::tryBuildHook`.
+     * Build hooks that are not talking to any goal, kept for the next
+     * goals that need one. A goal that is awaiting a hook's reply owns
+     * that hook meanwhile; see `DerivationBuildingGoal::tryBuildHook`.
      */
-    std::unique_ptr<HookInstance> hook;
+    std::vector<std::unique_ptr<HookInstance>> idleHooks;
 #endif
+
+    /**
+     * Number of build hooks whose reply a goal is awaiting. Together
+     * with `idleHooks`, at most `max-build-hooks`.
+     */
+    size_t nrBusyHooks = 0;
 
     uint64_t expectedBuilds = 0;
     uint64_t doneBuilds = 0;
@@ -396,6 +407,16 @@ public:
      * to wait for multiple locks in the main select() loop.
      */
     void waitForAWhile(GoalPtr goal);
+
+    /**
+     * Put `goal` to sleep until a build hook is released.
+     */
+    void waitForHook(GoalPtr goal);
+
+    /**
+     * Decrement `nrBusyHooks` and wake up the goals waiting for a hook.
+     */
+    void releaseHook();
 
     /**
      * Wait until explicitly resumed by Waker::enqueue.
