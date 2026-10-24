@@ -246,6 +246,11 @@ public:
     fun<std::list<ref<Store>>()> getSubstituters;
 
 #ifndef _WIN32 // TODO Enable building on Windows
+    /**
+     * A build hook that is not talking to any goal, kept for the next
+     * goal that needs one. A goal that is awaiting a hook's reply owns
+     * that hook itself; see `DerivationBuildingGoal::tryBuildHook`.
+     */
     std::unique_ptr<HookInstance> hook;
 #endif
 

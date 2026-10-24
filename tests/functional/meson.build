@@ -68,6 +68,7 @@ suites = [
       'build-hook-builtin-error.sh',
       'build-hook-configured.sh',
       'build-hook-program.sh',
+      'build-hook-async.sh',
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
       'build-remote-input-addressed.sh',

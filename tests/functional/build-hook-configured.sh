@@ -24,8 +24,17 @@ echo "build-hook = $hook" >> "$test_nix_conf"
 # The daemon reads `nix.conf` at startup. A no-op without one.
 restartDaemon
 
-# The hook declines, so the build falls back to the local builder.
-nix-build dependencies.nix --no-out-link
+# The hook declines, so the builds fall back to the local builder. Two
+# derivations in a chain, so the goals reach the hook one after the
+# other: `decline-permanently` from the first must stop the second from
+# starting a hook at all. (Goals that are ready at the same time each
+# start their own hook; see build-hook-async.sh.)
+# shellcheck disable=SC2016
+nix-build --no-out-link -E '
+  with import '"${config_nix}"';
+  let a = mkDerivation { name = "configured-hook-a"; buildCommand = "echo a > $out"; };
+  in mkDerivation { name = "configured-hook-b"; inherit a; buildCommand = "cat $a > $out"; }
+'
 
 # Started once: `decline-permanently` stops further attempts.
 [[ $(wc -l < "$ran") -eq 1 ]]
