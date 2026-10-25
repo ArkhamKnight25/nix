@@ -1,11 +1,26 @@
 #include "nix/util/serialise-async.hh"
+#include "nix/util/finally.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/memory-source-accessor.hh"
 #include "nix/util/tests/gmock-matchers.hh"
 
+#include <csignal>
+#include <boost/asio/bind_cancellation_slot.hpp>
+#include <boost/asio/cancellation_signal.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/use_future.hpp>
+#include <boost/system/system_error.hpp>
 
 #include <gtest/gtest.h>
+
+#include <array>
+#include <cerrno>
+#include <chrono>
+#include <future>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace nix {
 
@@ -13,6 +28,21 @@ class AsyncFdTest : public ::testing::Test
 {
 protected:
     asio::io_context ctx;
+
+    /**
+     * Run the loop for at most a few seconds, so that a coroutine that
+     * never completes fails the test instead of hanging it.
+     */
+    void runBounded()
+    {
+        ctx.run_for(std::chrono::seconds(5));
+    }
+
+    template<typename T>
+    static bool ready(const std::future<T> & f)
+    {
+        return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    }
 };
 
 /* Note that in practice we'd want to run with the protected_fixedsize_stack allocator. */
@@ -44,7 +74,9 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(read));
+    ASSERT_TRUE(ready(write));
 
     std::unique_ptr<MemorySourceAccessor> accessor;
 
@@ -53,24 +85,210 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
     EXPECT_THAT(accessor, ::nix::testing::HasContents(CanonPath::root, contents));
 }
 
-TEST_F(AsyncFdTest, writeToInvalidFd)
+TEST_F(AsyncFdTest, writeToClosedPipe)
 {
     Pipe pipe;
     pipe.create();
+    /* With no reader the write fails with EPIPE and raises SIGPIPE, which
+       Nix programs ignore. */
+    auto oldHandler = ::signal(SIGPIPE, SIG_IGN);
+    Finally restoreHandler([&] { ::signal(SIGPIPE, oldHandler); });
+    pipe.readSide.close();
 
     auto write = asio::spawn(
         ctx,
         [&](asio::yield_context yield) {
-            Descriptor fd = pipe.writeSide.get();
             AsyncFdSink sink(ctx, yield, std::move(pipe.writeSide));
-            ::close(fd);
             sink << "hello";
             sink.flush();
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(write));
     EXPECT_THROW(write.get(), SystemError);
+}
+
+TEST_F(AsyncFdTest, eofThrowsEndOfFile)
+{
+    Pipe pipe;
+    pipe.create();
+    pipe.writeSide.close();
+
+    auto read = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            source.endOfFileError = "the other side went away";
+            char c;
+            /* `Source::operator()` would spin on a zero-length read. */
+            source(&c, 1);
+        },
+        asio::use_future);
+
+    runBounded();
+    ASSERT_TRUE(ready(read));
+    try {
+        read.get();
+        FAIL() << "no EndOfFile was thrown";
+    } catch (EndOfFile & e) {
+        EXPECT_THAT(e.what(), ::testing::HasSubstr("the other side went away"));
+    }
+}
+
+TEST_F(AsyncFdTest, hasDataProbesTheDescriptorThroughTheBase)
+{
+    Pipe pipe;
+    pipe.create();
+
+    auto probe = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            /* As `processStderr` sees it. */
+            BufferedSource & base = source;
+            bool before = base.hasData();
+            writeFull(pipe.writeSide.get(), "x");
+            bool after = base.hasData();
+            return std::pair{before, after};
+        },
+        asio::use_future);
+
+    runBounded();
+    ASSERT_TRUE(ready(probe));
+    auto [before, after] = probe.get();
+    EXPECT_FALSE(before);
+    EXPECT_TRUE(after);
+}
+
+/* A terminal cancellation emitted from the loop aborts a coroutine
+   suspended on a read with `operation_aborted`, as
+   `DerivationBuildingGoal::buildRemotely` relies on when its goal is
+   destroyed. Otherwise `~Worker` would wait forever. */
+TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
+{
+    Pipe pipe;
+    pipe.create();
+
+    asio::cancellation_signal cancel;
+    std::exception_ptr error;
+    bool completed = false;
+
+    asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            char c;
+            /* Nobody writes, so this suspends until cancelled. */
+            source(&c, 1);
+        },
+        asio::bind_cancellation_slot(cancel.slot(), [&](std::exception_ptr e) {
+            completed = true;
+            error = e;
+        }));
+
+    /* Run the coroutine up to its suspension on the read. */
+    ctx.poll();
+    ASSERT_FALSE(completed);
+
+    /* From the loop, as `onLogLimitExceeded` and `CancelOnExit` do. */
+    asio::post(ctx, [&]() { cancel.emit(asio::cancellation_type::terminal); });
+    runBounded();
+
+    ASSERT_TRUE(completed);
+    ASSERT_TRUE(error);
+    try {
+        std::rethrow_exception(error);
+    } catch (SystemError & e) {
+        EXPECT_EQ(e.ec(), std::error_code(asio::error::make_error_code(asio::error::operation_aborted)));
+    } catch (...) {
+        FAIL() << "expected a SystemError carrying operation_aborted";
+    }
+}
+
+/* A terminal cancellation emitted while no operation is pending only
+   marks the coroutine's state. With `throw_if_cancelled(true)`, as
+   `buildOnRemoteMachine` sets it, the next operation then fails with
+   `operation_aborted`. Here the cancellation arrives during a `post`,
+   and the next operation is a write to a full pipe that would hang. */
+TEST_F(AsyncFdTest, terminalCancellationBetweenOperationsFailsTheNextOne)
+{
+    Pipe pipe;
+    pipe.create();
+
+    /* Fill the pipe until not even one more byte fits. */
+    {
+        int fd = pipe.writeSide.get();
+        int flags = ::fcntl(fd, F_GETFL);
+        ASSERT_NE(flags, -1);
+        ASSERT_NE(::fcntl(fd, F_SETFL, flags | O_NONBLOCK), -1);
+        std::array<char, 4096> chunk{};
+        for (size_t size : {chunk.size(), size_t(1)}) {
+            while (true) {
+                auto n = ::write(fd, chunk.data(), size);
+                if (n > 0)
+                    continue;
+                ASSERT_EQ(n, -1);
+                if (errno == EINTR)
+                    continue;
+                ASSERT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK) << "errno " << errno;
+                break;
+            }
+        }
+    }
+
+    asio::cancellation_signal cancel;
+    std::exception_ptr error;
+    bool completed = false;
+    bool suspended = false;
+    bool cancelledWhileSuspended = false;
+    bool resumed = false;
+
+    asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            yield.throw_if_cancelled(true);
+            /* Off again before completing, as in `buildOnRemoteMachine`. */
+            Finally noLongerThrowIfCancelled([&] { yield.throw_if_cancelled(false); });
+
+            AsyncFdSink sink(ctx, yield, std::move(pipe.writeSide));
+
+            /* Queued ahead of our own resumption below. */
+            asio::post(ctx, [&]() {
+                cancelledWhileSuspended = suspended;
+                cancel.emit(asio::cancellation_type::terminal);
+            });
+            suspended = true;
+            asio::post(ctx, yield);
+            suspended = false;
+            resumed = true;
+
+            sink << "x";
+            sink.flush();
+        },
+        asio::bind_cancellation_slot(cancel.slot(), [&](std::exception_ptr e) {
+            completed = true;
+            error = e;
+        }));
+
+    runBounded();
+
+    ASSERT_TRUE(resumed);
+    ASSERT_TRUE(cancelledWhileSuspended);
+    ASSERT_TRUE(completed) << "the write after the cancellation is still waiting";
+    ASSERT_TRUE(error);
+    const auto aborted = asio::error::make_error_code(asio::error::operation_aborted);
+    try {
+        std::rethrow_exception(error);
+    } catch (boost::system::system_error & e) {
+        /* Thrown by the coroutine on starting the operation. */
+        EXPECT_EQ(e.code(), aborted);
+    } catch (SystemError & e) {
+        /* Or the operation's own `ec`, should Boost report it there. */
+        EXPECT_EQ(e.ec(), std::error_code(aborted));
+    } catch (...) {
+        FAIL() << "expected the write to fail with operation_aborted";
+    }
 }
 
 } // namespace nix

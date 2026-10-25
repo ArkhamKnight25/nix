@@ -165,9 +165,12 @@ public:
     std::string readLine(bool eofOk = false, char terminator = '\n');
 
     /**
-     * Return true if the buffer is not empty.
+     * Return true if the buffer is not empty. Virtual so that a source
+     * that can poll its descriptor (`FdSource`, `AsyncFdSource`) also
+     * reports unread input there, which non-blocking `processStderr`
+     * relies on.
      */
-    bool hasData();
+    virtual bool hasData();
 
 protected:
     /**
@@ -273,10 +276,10 @@ public:
     void restart() override;
 
     /**
-     * Return true if the buffer is not empty after a non-blocking
-     * read.
+     * Return true if the buffer is not empty, or the descriptor is
+     * readable right now (data, EOF or error), without blocking.
      */
-    bool hasData();
+    bool hasData() override;
 
     void skip(size_t len) override;
 
