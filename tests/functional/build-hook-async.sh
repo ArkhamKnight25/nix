@@ -8,6 +8,8 @@
 
 source common.sh
 
+# Older daemons wait for the hook's reply with a blocking read.
+requireDaemonNewerThan "2.36pre"
 TODO_NixOS
 
 hook="$TEST_ROOT/hook.sh"
