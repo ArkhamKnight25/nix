@@ -211,6 +211,11 @@ std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && comm
         },
         fdr);
 
+    /* With `localhost` this is the remote daemon itself. Let it stop its
+       build before it is killed: nothing else does on macOS. */
+    conn->sshPid.setKillSignal(SIGTERM);
+    conn->sshPid.setKillTimeout(std::chrono::seconds(10));
+
     in.readSide.close();
     out.writeSide.close();
 

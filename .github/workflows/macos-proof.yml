@@ -1,0 +1,71 @@
+name: "macOS proof"
+
+# Throwaway: find out why stopping the client leaves the remote build
+# running on macOS with the forked build hook.
+on:
+  push:
+    branches:
+      - 'ci/macos-proof-*'
+
+permissions: read-all # zizmor: ignore[excessive-permissions]
+
+jobs:
+  repeat:
+    runs-on: macos-14
+    timeout-minutes: 120
+    env:
+      TEST: ${{ contains(github.ref_name, 'realssh') && 'build-hook-interrupt-realssh' || (contains(github.ref_name, 'trace') && 'build-hook-interrupt-trace' || 'build-hook-builtin-interrupt') }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: ./.github/actions/install-nix-action
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        dogfood: true
+        extra_nix_config: "sandbox = true"
+    - name: Enable sshd on 127.0.0.1
+      if: contains(github.ref_name, 'realssh')
+      run: |
+        set -x
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
+        cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+        sudo systemsetup -setremotelogin on || true
+        sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist || true
+        sleep 3
+        ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes runner@127.0.0.1 'echo ssh-ok; echo "remote shell: $SHELL"'
+    - name: Build in the dev shell
+      run: |
+        nix print-dev-env > "$RUNNER_TEMP/devenv.sh"
+        nix develop --command bash -c '
+          set -e
+          echo "bash $BASH_VERSION"
+          source "$RUNNER_TEMP/devenv.sh"
+          out="$(pwd)/outputs/out" dev=$out debug=$out mesonFlags+=" --prefix=${out}"
+          dontAddPrefix=1 configurePhase
+          buildPhase
+          pwd > "$GITHUB_WORKSPACE/.builddir"
+        '
+    - name: Run the test 20 times
+      run: |
+        nix develop --command bash -c '
+          source "$RUNNER_TEMP/devenv.sh"
+          set -u
+          cd "$(cat "$GITHUB_WORKSPACE/.builddir")"
+          echo "test: $TEST"
+          pass=0; fail=0
+          for i in $(seq 20); do
+            if meson test --no-rebuild "nix-functional-tests:$TEST" > /tmp/out.txt 2>&1; then
+              pass=$((pass + 1)); echo "round $i: OK"; shown=$pass
+            else
+              fail=$((fail + 1)); echo "round $i: FAIL"; shown=$fail
+              grep -E "test failed" meson-logs/testlog.txt | head -2
+            fi
+            if [ "$shown" -le 3 ]; then
+              sed -n "/^=== TRACE (/,/^=== TRACE end/p" meson-logs/testlog.txt | head -80
+            fi
+          done
+          echo "RESULT pass=$pass fail=$fail"
+        '
