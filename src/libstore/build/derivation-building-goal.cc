@@ -1311,9 +1311,13 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
     worker.childTerminated(this);
 
     if (eof) {
-        EndOfFile e("unexpected EOF reading a line");
-        e.addTrace({}, "while reading the response from the build hook");
-        throw e;
+        /* The same error and trace as the blocking `readLine` gave. */
+        try {
+            throw EndOfFile("unexpected EOF reading a line");
+        } catch (EndOfFile & e) {
+            e.addTrace({}, "while reading the response from the build hook");
+            throw;
+        }
     }
 
     debug("hook reply is '%1%'", *reply);
