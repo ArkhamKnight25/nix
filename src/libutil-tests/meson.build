@@ -68,7 +68,6 @@ sources = files(
   'position.cc',
   'processes.cc',
   'ref.cc',
-  'serialise-async.cc',
   'serialise.cc',
   'sort.cc',
   'source-accessor.cc',
@@ -84,6 +83,8 @@ sources = files(
 
 if host_machine.system() != 'windows'
   subdir('unix')
+  # Closes and pipes POSIX descriptors.
+  sources += files('serialise-async.cc')
 endif
 
 include_dirs = [ include_directories('.') ]
@@ -96,6 +97,9 @@ if build_unit_tests
     dependency('gtest', main : false),
     dependency('gmock'),
     dependency('libzstd', version : '>= 1.4.0'),
+    # `serialise-async.cc` runs stackful coroutines. Boost is not in
+    # the `nix-util` pkg-config file, so link Boost.Context here.
+    dependency('boost', modules : [ 'context' ], include_type : 'system'),
   ]
 
   configdata = configuration_data()
