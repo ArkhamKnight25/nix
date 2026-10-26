@@ -37,6 +37,74 @@ static void reply(Descriptor toParent, std::string_view line)
     writeFull(toParent, std::string{line} + "\n");
 }
 
+bool trustedOrLegacy(Store & remote)
+{
+    std::optional trusted = remote.isTrustedClient();
+    return !trusted || *trusted;
+}
+
+void warnIfKeptFailedRemotely(const std::string & platform)
+{
+    if (settings.keepFailed)
+        warn(
+            "The failed build directory was kept on the remote builder due to `--keep-failed`.%s",
+            (settings.thisSystem == platform || settings.extraPlatforms.get().count(platform) > 0)
+                ? " You can re-run the command with `--builders ''` to disable remote building for this invocation."
+                : "");
+}
+
+template<typename Drv>
+MissingOutputs findMissingOutputs(
+    Store & store,
+    const StorePath & drvPath,
+    const Drv & drv,
+    const StringSet & wantedOutputs,
+    const BuildResult & result,
+    std::string_view storeUri)
+{
+    MissingOutputs missing;
+    if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations) && !type(drv).hasKnownOutputPaths()) {
+        for (auto & outputName : wantedOutputs) {
+            auto thisOutputId = DrvOutput{drvPath, outputName};
+            if (!store.queryRealisation(thisOutputId)) {
+                debug("missing output %s", outputName);
+                if (auto * success = result.tryGetSuccess()) {
+                    auto i = success->builtOutputs.find(outputName);
+                    if (i == success->builtOutputs.end())
+                        throw Error(
+                            "remote builder '%s' returned no realisation for output '%s'", storeUri, outputName);
+                    auto & newRealisation = i->second;
+                    missing.realisations.insert({newRealisation, thisOutputId});
+                    missing.paths.insert(newRealisation.outPath);
+                }
+            }
+        }
+    } else {
+        auto outputPaths = outputsAndOptPaths(drv, store);
+        for (auto & [outputName, hopefullyOutputPath] : outputPaths) {
+            assert(hopefullyOutputPath.second);
+            if (!store.isValidPath(*hopefullyOutputPath.second))
+                missing.paths.insert(*hopefullyOutputPath.second);
+        }
+    }
+    return missing;
+}
+
+template MissingOutputs findMissingOutputs(
+    Store &, const StorePath &, const BasicDerivation &, const StringSet &, const BuildResult &, std::string_view);
+template MissingOutputs findMissingOutputs(
+    Store &, const StorePath &, const Derivation &, const StringSet &, const BuildResult &, std::string_view);
+
+void registerRealisations(Store & store, const std::set<Realisation> & realisations)
+{
+    for (auto & realisation : realisations) {
+        // Should hold, because if the feature isn't enabled the set
+        // of missing realisations should be empty
+        experimentalFeatureSettings.require(Xp::CaDerivations);
+        store.registerDrvOutput(realisation, NoCheckSigs);
+    }
+}
+
 void serveBuildHook(
     ref<Store> store, unsigned int maxBuildJobs, Source & from, Descriptor toParent, Descriptor sshErrorFd)
 {
@@ -169,20 +237,10 @@ connected:
 
     std::optional<BuildResult> optResult;
 
-    // If we don't know whether we are trusted (e.g. `ssh://`
-    // stores), we assume we are. This is necessary for backwards
-    // compat.
-    bool trustedOrLegacy = ({
-        std::optional trusted = sshStore->isTrustedClient();
-        !trusted || *trusted;
-    });
-
-    // See the very large comment in `case WorkerProto::Op::BuildDerivation:` in
-    // `src/libstore/daemon.cc` that explains the trust model here.
-    //
-    // This condition mirrors that: that code enforces the "rules" outlined there;
-    // we do the best we can given those "rules".
-    if (trustedOrLegacy || type(drv).isCA()) {
+    // This condition mirrors the trust model in `src/libstore/daemon.cc`:
+    // that code enforces the "rules" outlined there; we do the best we can
+    // given those "rules".
+    if (trustedOrLegacy(*sshStore) || type(drv).isCA()) {
         // Check if there are any derivation inputs
         bool hasInputDrvs = std::ranges::any_of(drv.inputs, [](const auto & input) {
             return std::holds_alternative<SingleDerivedPath::Built>(input.raw());
@@ -217,13 +275,7 @@ connected:
         optResult = sshStore->getBuilder()->buildDerivation(*drvPath, resolvedDrv);
         auto & result = *optResult;
         if (auto * failureP = result.tryGetFailure()) {
-            if (settings.keepFailed) {
-                warn(
-                    "The failed build directory was kept on the remote builder due to `--keep-failed`.%s",
-                    (settings.thisSystem == drv.platform || settings.extraPlatforms.get().count(drv.platform) > 0)
-                        ? " You can re-run the command with `--builders ''` to disable remote building for this invocation."
-                        : "");
-            }
+            warnIfKeptFailedRemotely(drv.platform);
             throw Error(
                 "build of '%s' on '%s' failed: %s", store->printStorePath(*drvPath), storeUri, failureP->message());
         }
@@ -238,48 +290,17 @@ connected:
         optResult = std::move(res[0]);
     }
 
-    std::set<Realisation> missingRealisations;
-    StorePathSet missingPaths;
-    if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations) && !type(drv).hasKnownOutputPaths()) {
-        for (auto & outputName : wantedOutputs) {
-            auto thisOutputId = DrvOutput{*drvPath, outputName};
-            if (!store->queryRealisation(thisOutputId)) {
-                debug("missing output %s", outputName);
-                assert(optResult);
-                auto & result = *optResult;
-                if (auto * successP = result.tryGetSuccess()) {
-                    auto & success = *successP;
-                    auto i = success.builtOutputs.find(outputName);
-                    assert(i != success.builtOutputs.end());
-                    auto & newRealisation = i->second;
-                    missingRealisations.insert({newRealisation, thisOutputId});
-                    missingPaths.insert(newRealisation.outPath);
-                }
-            }
-        }
-    } else {
-        auto outputPaths = outputsAndOptPaths(drv, *store);
-        for (auto & [outputName, hopefullyOutputPath] : outputPaths) {
-            assert(hopefullyOutputPath.second);
-            if (!store->isValidPath(*hopefullyOutputPath.second))
-                missingPaths.insert(*hopefullyOutputPath.second);
-        }
-    }
+    auto missing = findMissingOutputs(*store, *drvPath, drv, wantedOutputs, *optResult, storeUri);
 
-    if (!missingPaths.empty()) {
+    if (!missing.paths.empty()) {
         Activity act(*logger, lvlTalkative, actUnknown, fmt("copying outputs from '%s'", storeUri));
         if (auto localStore = store.dynamic_pointer_cast<LocalStore>())
-            for (auto & path : missingPaths)
+            for (auto & path : missing.paths)
                 localStore->locksHeld.lock()->insert(store->printStorePath(path)); /* FIXME: ugly */
-        copyPaths(*sshStore, *store, missingPaths, NoRepair, NoCheckSigs, NoSubstitute);
+        copyPaths(*sshStore, *store, missing.paths, NoRepair, NoCheckSigs, NoSubstitute);
     }
     // XXX: Should be done as part of `copyPaths`
-    for (auto & realisation : missingRealisations) {
-        // Should hold, because if the feature isn't enabled the set
-        // of missing realisations should be empty
-        experimentalFeatureSettings.require(Xp::CaDerivations);
-        store->registerDrvOutput(realisation, NoCheckSigs);
-    }
+    registerRealisations(*store, missing.realisations);
 }
 
 } // namespace nix
