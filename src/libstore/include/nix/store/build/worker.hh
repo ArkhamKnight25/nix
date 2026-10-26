@@ -10,6 +10,7 @@
 #include "nix/store/realisation.hh"
 #include "nix/util/muxable-pipe.hh"
 #include "nix/util/async.hh"
+#include "nix/store/machines.hh"
 
 #include <functional>
 #include <future>
@@ -182,6 +183,11 @@ private:
      */
     std::map<StorePath, bool> pathContentsGoodCache;
 
+    /**
+     * See `remoteMachines()`.
+     */
+    std::optional<Machines> remoteMachines_;
+
     class Waker
     {
 #ifndef _WIN32
@@ -281,6 +287,16 @@ public:
      * it answers with "decline-permanently", we don't try again.
      */
     bool tryBuildHook = true;
+
+    /**
+     * The configured remote builders, parsed on first use and shared by
+     * every in-process remote build of this worker. A machine that could
+     * not be reached is disabled here for the rest of the worker's life,
+     * as a hook process disabled it for the rest of its own. A
+     * `builders` setting that does not parse is reported once and
+     * yields no machines.
+     */
+    Machines & remoteMachines();
 
     Worker(Store & store, Store & evalStore);
     ~Worker();

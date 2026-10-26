@@ -573,6 +573,19 @@ void Worker::waitForInput()
     }
 }
 
+Machines & Worker::remoteMachines()
+{
+    if (!remoteMachines_) {
+        try {
+            remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
+        } catch (Error & e) {
+            logError(e.info());
+            remoteMachines_ = Machines{};
+        }
+    }
+    return *remoteMachines_;
+}
+
 std::weak_ptr<Worker::Waker> Worker::getCrossThreadWaker()
 {
     return wakerState.get_ptr();

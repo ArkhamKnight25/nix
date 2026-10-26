@@ -108,6 +108,9 @@ boost = dependency(
   'boost',
   modules : [
     'container',
+    # Stackful coroutines (`asio::spawn`) for in-process remote builds.
+    # `nix-util` depends on it too, but not through its pkg-config file.
+    'context',
     # Shouldn't list, because can header-only, and Meson currently looks for libs
     #'regex',
     'url',

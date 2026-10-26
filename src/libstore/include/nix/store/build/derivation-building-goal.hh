@@ -10,6 +10,7 @@
 #include "nix/store/pathlocks.hh"
 #include "nix/store/build/goal.hh"
 #include "nix/store/build/build-log.hh"
+#include "nix/store/machine-selection.hh"
 
 namespace nix {
 
@@ -93,6 +94,51 @@ private:
      * Is the build hook willing to perform the build?
      */
     HookReply tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+
+    /**
+     * The answer to a request for a remote build, from whichever side
+     * handles it: the configured hook program (`machine` empty; the
+     * accepting hook is `worker.hook`) or the worker itself (`machine`
+     * holds the slot it reserved).
+     */
+    struct RemoteReply
+    {
+        HookReply reply = rpDecline;
+        std::optional<AcquiredMachine> machine;
+    };
+
+    /**
+     * Ask for a remote build: of the hook program when `build-hook` is
+     * set, otherwise of the worker's own remote builder.
+     */
+    RemoteReply tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /**
+     * The worker's own answer, with no hook process: reserve a slot on
+     * the least loaded machine that can run this build. Lock files
+     * only, so this is synchronous. `rpPostpone` when every fitting
+     * machine is full and we cannot build locally either, `rpDecline`
+     * when none fits.
+     */
+    RemoteReply selectRemoteMachine(const DerivationOptions<StorePath> & drvOptions);
+
+    /**
+     * Build on the machine `selectRemoteMachine` reserved. The
+     * connection, the copies and the build run as a stackful coroutine
+     * on `worker.ioContext` (see `buildOnRemoteMachine`), so the worker
+     * keeps running other goals meanwhile; this goal sleeps until the
+     * coroutine is done. Returns `std::nullopt` when no machine could be
+     * reached after all, in which case the caller builds locally, as it
+     * would after a hook's `decline`.
+     */
+    Co<std::optional<Result>> buildRemotely(
+        AcquiredMachine machine,
+        const DerivationOptions<StorePath> & drvOptions,
+        const StorePathSet & inputPaths,
+        std::map<std::string, InitialOutput> & initialOutputs,
+        PathLocks outputLocks);
+#endif
 
     BuildError logLimitExceeded();
 

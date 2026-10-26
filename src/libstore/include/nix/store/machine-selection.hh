@@ -76,6 +76,17 @@ std::variant<AcquiredMachine, NoMachine> acquireMachineSlot(
     const StringSet & requiredFeatures);
 
 /**
+ * The explanation printed when no configured machine can run
+ * `neededSystem` with `requiredFeatures`: the request, then every
+ * machine's systems, slots and features.
+ */
+std::string noMachineAvailableMessage(
+    const Machines & machines,
+    std::string_view drvPath,
+    const std::string & neededSystem,
+    const StringSet & requiredFeatures);
+
+/**
  * Take the lock that serialises uploads to `storeUri`, so that
  * concurrent builds do not each copy the same closure to the same
  * machine.
