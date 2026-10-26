@@ -171,6 +171,15 @@ requireDaemonNewerThan () {
     isDaemonNewer "$1" || skipTest "Daemon is too old"
 }
 
+# Skip unless the daemon is this exact Nix version, for features no
+# released daemon has, which `requireDaemonNewerThan` cannot express.
+requireDaemonIsThisVersion () {
+    [[ -n "${NIX_DAEMON_PACKAGE:-}" ]] || return 0
+    local daemonVersion
+    daemonVersion=$("$NIX_DAEMON_PACKAGE/bin/nix" daemon --version | cut -d' ' -f3)
+    [[ "$daemonVersion" == "$(nix --version | cut -d' ' -f3)" ]] || skipTest "Daemon is not this version"
+}
+
 canUseSandbox() {
     [[ ${_canUseSandbox-} ]]
 }

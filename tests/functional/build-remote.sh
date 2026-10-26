@@ -70,6 +70,8 @@ echo "$output" | grepQuiet builder-build-remote-input-3.sh
 unset output
 
 
+# input1's log comes from ssh's stderr (`ssh://`), input3's from daemon
+# messages (`ssh-ng://`).
 for i in input1 input3; do
 nix log --store "$TEST_ROOT/machine0" --file "$file" --arg busybox "$busybox" "passthru.$i" | grep hi-$i
 done
