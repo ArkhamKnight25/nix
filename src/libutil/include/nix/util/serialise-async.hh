@@ -9,6 +9,11 @@
 #include <boost/asio/posix/stream_descriptor.hpp>
 #include <boost/asio/spawn.hpp>
 
+#ifndef _WIN32
+#  include <cerrno>
+#  include <poll.h>
+#endif
+
 namespace nix {
 
 using NativeAsyncStreamDescriptor =
@@ -46,6 +51,41 @@ public:
         else if (ec)
             throw SystemError(ec, "read of %1% bytes", len);
         return res;
+    }
+
+    /**
+     * Whether a read would return at once: data in the buffer, or the
+     * descriptor readable right now (data, EOF or error). The same
+     * zero-timeout probe as `FdSource::hasData`, on the descriptor
+     * asio holds, so that `processStderr(…, block = false)` drains the
+     * daemon's messages between frames here as it does on a blocking
+     * connection. The probe never suspends the coroutine.
+     */
+    bool hasData() override
+    {
+        if (BufferedSource::hasData())
+            return true;
+#ifdef _WIN32
+        /* No readiness probe on an overlapped handle without issuing a
+           read; the buffer is all we can tell. Nothing asynchronous
+           runs on Windows yet. */
+        return false;
+#else
+        while (true) {
+            struct pollfd pfd;
+            pfd.fd = fd.native_handle();
+            pfd.events = POLLIN;
+            pfd.revents = 0;
+
+            auto n = ::poll(&pfd, 1, 0);
+            if (n < 0) {
+                if (errno == EINTR)
+                    continue;
+                throw SysError("polling file descriptor");
+            }
+            return n > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+        }
+#endif
     }
 };
 
