@@ -59,6 +59,12 @@ struct Child
     bool respectTimeouts;
     bool inBuildSlot;
     /**
+     * The goal's `jobCategory()` when the child started. Recorded here
+     * because the child may be unregistered from the goal's destructor,
+     * where that virtual is no longer callable.
+     */
+    JobCategory jobCategory;
+    /**
      * Time we last got output on stdout/stderr
      */
     steady_time_point lastOutput;
@@ -277,6 +283,11 @@ public:
     fun<std::list<ref<Store>>()> getSubstituters;
 
 #ifndef _WIN32 // TODO Enable building on Windows
+    /**
+     * A build hook that is not talking to any goal, kept for the next
+     * goal that needs one. A goal that is awaiting a hook's reply owns
+     * that hook itself; see `DerivationBuildingGoal::tryBuildHook`.
+     */
     std::unique_ptr<HookInstance> hook;
 #endif
 
@@ -405,19 +416,12 @@ public:
     /**
      * Unregisters a running child process.
      *
-     * This overload requires `goal` to point to a fully constructed,
-     * valid goal object, as it calls `goal->jobCategory()`.
+     * `goal` is only compared against the registered children, never
+     * dereferenced, so this is safe to call from a destructor where the
+     * goal object is partially destroyed; the job category was recorded
+     * by `childStarted`.
      */
     void childTerminated(Goal * goal);
-
-    /**
-     * Unregisters a running child process, like the other overload.
-     *
-     * This overload only uses `goal` as a pointer for comparison with
-     * weak goal references, so it is safe to call from destructors
-     * where the goal object may be partially destroyed.
-     */
-    void childTerminated(Goal * goal, JobCategory jobCategory);
 
     /**
      * Put `goal` to sleep until a build slot becomes available (which

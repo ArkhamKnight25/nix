@@ -91,9 +91,22 @@ private:
         PathLocks outputLocks);
 
     /**
-     * Is the build hook willing to perform the build?
+     * Is the build hook willing to perform the build? The hook's reply
+     * is awaited through the worker's poll loop, so other goals keep
+     * running while the hook selects a machine and connects to it. On
+     * `rpAccept` the hook and the machine it named are left in
+     * `hookAccepted` and `hookMachineName` for `buildWithHook`.
      */
-    HookReply tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+    Co<HookReply> tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /**
+     * The hook that accepted this build, and the machine it named,
+     * between `tryBuildHook` and `buildWithHook`.
+     */
+    std::unique_ptr<HookInstance> hookAccepted;
+    std::string hookMachineName;
+#endif
 
     /**
      * The answer to a request for a remote build, from whichever side
@@ -109,9 +122,11 @@ private:
 
     /**
      * Ask for a remote build: of the hook program when `build-hook` is
-     * set, otherwise of the worker's own remote builder.
+     * set, otherwise of the worker's own remote builder. A coroutine
+     * because the hook's reply is awaited through the poll loop; the
+     * worker's own answer is immediate.
      */
-    RemoteReply tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions);
+    Co<RemoteReply> tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions);
 
 #ifndef _WIN32
     /**

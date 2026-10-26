@@ -523,7 +523,7 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
                     .builtOutputs = checkPathValidity(initialOutputs).second,
                 }};
 
-            auto reply = tryRemoteBuilder(drvOptions);
+            auto reply = co_await tryRemoteBuilder(drvOptions);
             switch (reply.reply) {
             case rpAccept:
                 /* Yes, a machine will do it. Wait until it is done. */
@@ -560,7 +560,7 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
                 if (valid)
                     break;
 
-                reply = tryRemoteBuilder(drvOptions);
+                reply = co_await tryRemoteBuilder(drvOptions);
                 switch (reply.reply) {
                 case rpAccept:
                     /* Yes, a machine will do it. Wait until it is done. */
@@ -643,20 +643,14 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::buildWithHook(
 #ifdef _WIN32 // TODO enable build hook on Windows
     unreachable();
 #else
-    std::unique_ptr<HookInstance> hook = std::move(worker.hook);
+    /* `tryBuildHook` has read the reply and the machine name. */
+    std::unique_ptr<HookInstance> hook = std::move(hookAccepted);
+    assert(hook);
+    std::string machineName = std::move(hookMachineName);
 
     /* Set up callback so childTerminated is called if the hook is
        destroyed (e.g., during failure cascades). */
-    hook->onKillChild = [this]() { worker.childTerminated(this, JobCategory::Build); };
-
-    std::string machineName = [&hook]() {
-        try {
-            return readLine(hook->fromHook.readSide.get());
-        } catch (Error & e) {
-            e.addTrace({}, "while reading the machine name from the build hook");
-            throw;
-        }
-    }();
+    hook->onKillChild = [this]() { worker.childTerminated(this); };
 
     CommonProto::WriteConn conn{hook->sink};
 
@@ -929,7 +923,7 @@ Goal::Co<DerivationBuildingGoal::LocalBuildOutcome> DerivationBuildingGoal::buil
 
                 void childTerminated() override
                 {
-                    goal.worker.childTerminated(&goal, JobCategory::Build);
+                    goal.worker.childTerminated(&goal);
                 }
 
                 void openLogFile() override
@@ -1250,87 +1244,135 @@ BuildError DerivationBuildingGoal::fixupBuilderFailureErrorMessage(BuilderFailur
     return BuildError{e.status, msg};
 }
 
-HookReply DerivationBuildingGoal::tryBuildHook(const DerivationOptions<StorePath> & drvOptions)
+Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions<StorePath> & drvOptions)
 {
 #ifdef _WIN32 // TODO enable build hook on Windows
-    return rpDecline;
+    co_return rpDecline;
 #else
     /* This should use `worker.evalStore`, but per #13179 the build hook
        doesn't work with eval store anyways. */
     if (worker.settings.buildHook.get().empty() || !worker.tryBuildHook || !worker.store.isValidPath(drvPath))
-        return rpDecline;
+        co_return rpDecline;
 
-    if (!worker.hook)
-        worker.hook = HookInstance::external(
+    /* Take the worker's idle hook, or start one. While this goal waits
+       for a reply the worker runs other goals; they find no idle hook
+       and start their own. */
+    std::unique_ptr<HookInstance> hook = std::move(worker.hook);
+    if (!hook)
+        hook = HookInstance::external(
             worker.settings.buildHook, std::chrono::milliseconds(worker.settings.buildHookKillTimeout));
 
+    /* Send the request to the hook. */
     try {
-
-        /* Send the request to the hook. */
-        worker.hook->sink << "try" << (worker.getNrLocalBuilds() < worker.settings.maxBuildJobs ? 1 : 0)
-                          << drv->platform << worker.store.printStorePath(drvPath)
-                          << drvOptions.getRequiredSystemFeatures(*drv);
-        worker.hook->sink.flush();
-
-        /* Read the first line of input, which should be a word indicating
-           whether the hook wishes to perform the build. */
-        std::string reply;
-        while (true) {
-            auto s = [&]() {
-                try {
-                    return readLine(worker.hook->fromHook.readSide.get());
-                } catch (Error & e) {
-                    e.addTrace({}, "while reading the response from the build hook");
-                    throw;
-                }
-            }();
-            if (handleJSONLogMessage(s, worker.act, worker.hook->activities, "the build hook", true))
-                ;
-            else if (s.substr(0, 2) == "# ") {
-                reply = s.substr(2);
-                break;
-            } else {
-                s += "\n";
-                writeToStderr(s);
-            }
-        }
-
-        debug("hook reply is '%1%'", reply);
-
-        if (reply == "decline")
-            return rpDecline;
-        else if (reply == "decline-permanently") {
-            worker.tryBuildHook = false;
-            worker.hook = 0;
-            return rpDecline;
-        } else if (reply == "postpone")
-            return rpPostpone;
-        else if (reply != "accept")
-            throw Error("bad hook reply '%s'", reply);
-
+        hook->sink << "try" << (worker.getNrLocalBuilds() < worker.settings.maxBuildJobs ? 1 : 0) << drv->platform
+                   << worker.store.printStorePath(drvPath) << drvOptions.getRequiredSystemFeatures(*drv);
+        hook->sink.flush();
     } catch (SystemError & e) {
-        if (e.is(std::errc::broken_pipe)) {
-            printError("build hook died unexpectedly: %s", chomp(drainFD(worker.hook->fromHook.readSide.get())));
-            worker.hook = 0;
-            return rpDecline;
-        } else
+        if (!e.is(std::errc::broken_pipe))
             throw;
+        /* Whatever it managed to write before dying. Do not block on it:
+           the pipe stays open until `hook` is destroyed on return, and
+           this is the worker's thread. */
+        printError(
+            "build hook died unexpectedly: %s", chomp(drainFD(hook->fromHook.readSide.get(), {.block = false})));
+        co_return rpDecline;
     }
 
-    return rpAccept;
+    /* Wait for the reply through the worker's poll loop instead of a
+       blocking read, so that other goals keep running while the hook
+       selects a machine and connects to it. The reply is a line `# word`;
+       after `# accept` one more line names the machine. Any other line
+       is a JSON log message or plain output from the hook.
+
+       The pipe is registered as a child for the wait, so it passes
+       through the event loop's `async_wait` in `Worker::waitForInput`,
+       which puts its blocking mode back afterwards; no blocking read
+       follows anyway, `buildWithHook` registers it again. */
+    hook->onKillChild = [this]() { worker.childTerminated(this); };
+    worker.childStarted(shared_from_this(), {hook->fromHook.readSide.get()}, false, false);
+
+    std::optional<std::string> reply;
+    std::optional<std::string> machineName;
+    std::string line;
+    bool eof = false;
+
+    auto done = [&]() { return eof || (reply && (*reply != "accept" || machineName)); };
+
+    while (!done()) {
+        auto event = co_await WaitForChildEvent{};
+        if (auto * output = std::get_if<ChildOutput>(&event)) {
+            for (auto c : output->data) {
+                if (c != '\n') {
+                    line += c;
+                    continue;
+                }
+                if (reply && *reply == "accept" && !machineName)
+                    machineName = line;
+                else if (handleJSONLogMessage(line, worker.act, hook->activities, "the build hook", true))
+                    ;
+                else if (!reply && line.starts_with("# "))
+                    reply = line.substr(2);
+                else
+                    writeToStderr(line + "\n");
+                line.clear();
+            }
+        } else
+            /* EOF. A timeout cannot happen: we did not ask for one. */
+            eof = true;
+    }
+
+    /* The hook writes nothing more until it gets our next message, so
+       no event can be pending here. */
+    worker.childTerminated(this);
+
+    if (eof) {
+        /* The same error and trace as the blocking `readLine` gave. */
+        try {
+            throw EndOfFile("unexpected EOF reading a line");
+        } catch (EndOfFile & e) {
+            e.addTrace({}, "while reading the response from the build hook");
+            throw;
+        }
+    }
+
+    debug("hook reply is '%1%'", *reply);
+
+    if (*reply == "decline" || *reply == "postpone") {
+        /* Keep the hook for the next request, unless another goal has
+           already left one. */
+        hook->onKillChild = nullptr;
+        if (!worker.hook)
+            worker.hook = std::move(hook);
+        co_return *reply == "decline" ? rpDecline : rpPostpone;
+    }
+    if (*reply == "decline-permanently") {
+        /* `hook` is destroyed on return and its child has already been
+           unregistered above; the callback would unregister a child
+           that is not there. Clear it as the keep-the-hook path does. */
+        hook->onKillChild = nullptr;
+        worker.tryBuildHook = false;
+        worker.hook.reset();
+        co_return rpDecline;
+    }
+    if (*reply != "accept")
+        throw Error("bad hook reply '%s'", *reply);
+
+    hookAccepted = std::move(hook);
+    hookMachineName = std::move(*machineName);
+    co_return rpAccept;
 #endif
 }
 
-DerivationBuildingGoal::RemoteReply
+Goal::Co<DerivationBuildingGoal::RemoteReply>
 DerivationBuildingGoal::tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions)
 {
 #ifndef _WIN32
     /* Only a configured hook runs as a program. Compare by value:
        `loadConfFile` resets `isOverridden()`. */
     if (worker.settings.buildHook.isDefault())
-        return selectRemoteMachine(drvOptions);
+        co_return selectRemoteMachine(drvOptions);
 #endif
-    return {.reply = tryBuildHook(drvOptions)};
+    co_return RemoteReply{.reply = co_await tryBuildHook(drvOptions)};
 }
 
 #ifndef _WIN32
