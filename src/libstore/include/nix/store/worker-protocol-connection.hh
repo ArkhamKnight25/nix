@@ -74,6 +74,14 @@ struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
     using BasicConnection::BasicConnection;
 
     /**
+     * Where the daemon's log messages, activities and results go when
+     * `processStderr` reads them: the process's `logger` unless the
+     * connection's owner wants to see them pass, as the in-process
+     * remote builder does to write the build's log file.
+     */
+    Logger * messageLogger = logger;
+
+    /**
      * Flush to direction
      */
     virtual ~BasicClientConnection();

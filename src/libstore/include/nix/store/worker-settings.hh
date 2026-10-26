@@ -124,7 +124,7 @@ public:
         R"(
           The program that performs remote builds, speaking the build-hook protocol over `stdio` with the Nix that requested them.
 
-          With the default value Nix runs its own implementation in a forked child of the building process (on platforms other than Linux and macOS, as `nix __build-remote`); an explicit `build-hook = nix __build-remote` selects the same. Any other value is run as a separate program.
+          With the default value no hook program runs: the building process selects a machine and drives the build over an `ssh-ng` connection itself, several machines at a time. An explicit `build-hook = nix __build-remote` runs that same logic as a separate process, as any other value is run.
 
           > **Important**
           >

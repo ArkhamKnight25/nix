@@ -54,8 +54,12 @@ public:
      *
      * The in-process remote builder (`DerivationBuildingGoal::buildRemotely`)
      * opens the machines it builds on this way.
+     *
+     * @param messageLogger Where the daemon's messages go, if not to
+     * the process's `logger`; see `BasicClientConnection::messageLogger`.
      */
-    ref<Store> openStoreAsync(asio::io_context & ctx, asio::yield_context yield) const;
+    ref<Store> openStoreAsync(
+        asio::io_context & ctx, asio::yield_context yield, std::shared_ptr<Logger> messageLogger = nullptr) const;
 
     StoreReference getReference() const override;
 };

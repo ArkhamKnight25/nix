@@ -60,6 +60,10 @@ public:
     {
         asio::io_context & ctx;
         asio::yield_context yield;
+        /**
+         * For the connections' `messageLogger`, when set.
+         */
+        std::shared_ptr<Logger> messageLogger;
     };
 
     std::optional<AsyncContext> async;
@@ -302,9 +306,10 @@ ref<Store> SSHStore::Config::openStore() const
     return make_ref<SSHStore>(ref{shared_from_this()});
 }
 
-ref<Store> SSHStore::Config::openStoreAsync(asio::io_context & ctx, asio::yield_context yield) const
+ref<Store> SSHStore::Config::openStoreAsync(
+    asio::io_context & ctx, asio::yield_context yield, std::shared_ptr<Logger> messageLogger) const
 {
-    return make_ref<SSHStore>(ref{shared_from_this()}, SSHStore::AsyncContext{ctx, yield});
+    return make_ref<SSHStore>(ref{shared_from_this()}, SSHStore::AsyncContext{ctx, yield, std::move(messageLogger)});
 }
 
 ref<Store> MountedSSHStore::Config::openStore() const
@@ -331,6 +336,8 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
     auto sshConn = master.startCommand(toOsStrings(std::move(command)), {}, /*awaitStarted=*/false);
     bool startedLinePending = sshConn->startedLinePending;
     auto conn = make_ref<Connection>(std::move(sshConn), *async);
+    if (async->messageLogger)
+        conn->messageLogger = async->messageLogger.get();
     if (startedLinePending) {
         std::string reply;
         try {
