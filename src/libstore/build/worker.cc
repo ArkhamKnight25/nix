@@ -62,9 +62,26 @@ Worker::~Worker()
        event loop that now completes with `operation_aborted`; let them
        unwind and release their connections (which kills the ssh
        children) before the loop itself goes away. Nothing else is left
-       on the loop, so this returns as soon as they are done. */
-    ioContext.restart();
-    ioContext.run();
+       on the loop, so this normally returns as soon as they are done.
+
+       Bound it all the same: a coroutine whose pending operation did not
+       honour the cancellation, or one that was never cancelled, would
+       otherwise keep `run()` waiting for I/O that nothing will drive
+       again, and the process would never exit. The deadline is checked
+       between handlers, so one that terminates an ssh child (SIGTERM,
+       then up to ten seconds) may still run past it. Whatever is left
+       afterwards is destroyed with the loop without running; its
+       connection's descriptors close with it. A destructor must not
+       throw, hence the catch. */
+    try {
+        ioContext.restart();
+        ioContext.run_for(std::chrono::seconds(5));
+        if (!ioContext.stopped())
+            printError(
+                "some remote builds were still in flight when the worker went away; abandoning their connections");
+    } catch (...) {
+        ignoreExceptionInDestructor();
+    }
 
     assert(expectedSubstitutions == 0);
     assert(expectedDownloadSize == 0);
