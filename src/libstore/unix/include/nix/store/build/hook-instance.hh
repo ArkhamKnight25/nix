@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 
 namespace nix {
 
@@ -15,8 +16,15 @@ namespace nix {
  * owned by a `Goal`. This is for efficiency: rather than starting the
  * hook every time we want to ask whether we can run a remote build
  * (which can be very often), we reuse a hook process for answering
- * those queries until it accepts a build.  So if there are N
- * derivations to be built, at most N hooks will be started.
+ * those queries until it accepts a build.
+ *
+ * One hook decides at a time. The goal asking it owns it while it
+ * waits for the reply (`Worker::hookBusy`); other goals that want the
+ * hook queue in `Worker::wantingHook` rather than start their own. A
+ * `decline` or `postpone` hands the hook back to `Worker::hook` for
+ * the next goal; `accept` keeps it for the build, and the next goal
+ * starts a fresh one. So besides the hook each accepted build takes
+ * along, at most one more is alive.
  */
 struct HookInstance
 {
@@ -45,14 +53,42 @@ struct HookInstance
     std::map<ActivityId, Activity> activities;
 
     /**
+     * The start of a line from `fromHook` that has arrived without its
+     * newline yet. The reader of the moment (`tryBuildHook`, then
+     * `buildWithHook`) takes it up and leaves the next one here, so a
+     * line cut by a read boundary is seen whole by whoever reads next,
+     * as the blocking `readLine` saw it.
+     */
+    std::string partialLine;
+
+    /**
      * Callback to run when the hook process is killed in the destructor.
      * Used to call `Worker::childTerminated`.
      */
     std::function<void()> onKillChild;
 
-    HookInstance(const Strings & buildHook, std::chrono::milliseconds timeout);
+    /**
+     * Run the program named by the `build-hook` setting, in a child
+     * process of this one. With the setting at its default this is
+     * `nix __build-remote` from the same installation, and it is started
+     * only for machines that are not `ssh-ng` stores: those the worker
+     * builds on itself (`DerivationBuildingGoal::buildRemotely`).
+     */
+    static std::unique_ptr<HookInstance> external(const Strings & buildHook, std::chrono::milliseconds timeout);
 
     ~HookInstance();
+
+private:
+
+    /**
+     * Creates the pipes.
+     */
+    HookInstance();
+
+    /**
+     * Take ownership of the started child and close its pipe ends.
+     */
+    void adopt(pid_t childPid, std::chrono::milliseconds timeout);
 };
 
 } // namespace nix

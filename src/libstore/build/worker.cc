@@ -14,6 +14,13 @@
 #include "nix/util/signals.hh"
 #include "nix/store/globals.hh"
 
+#include <list>
+
+#ifndef _WIN32
+#  include <boost/asio/posix/stream_descriptor.hpp>
+#  include <fcntl.h>
+#endif
+
 namespace nix {
 
 Worker::Worker(Store & store, Store & evalStore)
@@ -40,15 +47,55 @@ Worker::Worker(Store & store, Store & evalStore)
     nrLocalBuilds = 0;
     nrSubstitutions = 0;
     lastWokenUp = steady_time_point::min();
+
+    /* `run` reaches `checkInterrupt()` only between waits. An interrupt
+       reaches this thread as `NIX_SIG_MULTI_INT` from the signal handler
+       thread (`ReceiveInterrupts`), which used to make `poll()` return
+       `EINTR` and `waitForInput` fall through. asio restarts its wait on
+       `EINTR`, so make the wait return ourselves. The callback runs on
+       the signal handler thread, hence the weak pointer. */
+    interruptCallback = createInterruptCallback([waker = std::weak_ptr<Waker>(wakerState.get_ptr())]() {
+        if (auto w = waker.lock())
+            w->wake();
+    });
 }
 
 Worker::~Worker()
 {
+    /* No more wake-ups from the signal thread while we tear down. */
+    interruptCallback.reset();
+
     /* Explicitly get rid of all strong pointers now.  After this all
        goals that refer to this worker should be gone.  (Otherwise we
        are in trouble, since goals may call childTerminated() etc. in
        their destructors). */
     topGoals.clear();
+
+    /* Destroying the goals cancelled the coroutines of any remote
+       builds still in flight. Each has an operation pending on the
+       event loop that now completes with `operation_aborted`; let them
+       unwind and release their connections (which kills the ssh
+       children) before the loop itself goes away. Nothing else is left
+       on the loop, so this normally returns as soon as they are done.
+
+       Bound it all the same: a coroutine whose pending operation did not
+       honour the cancellation, or one that was never cancelled, would
+       otherwise keep `run()` waiting for I/O that nothing will drive
+       again, and the process would never exit. The deadline is checked
+       between handlers, so one that terminates an ssh child (SIGTERM,
+       then up to ten seconds) may still run past it. Whatever is left
+       afterwards is destroyed with the loop without running; its
+       connection's descriptors close with it. A destructor must not
+       throw, hence the catch. */
+    try {
+        ioContext.restart();
+        ioContext.run_for(std::chrono::seconds(5));
+        if (!ioContext.stopped())
+            printError(
+                "some remote builds were still in flight when the worker went away; abandoning their connections");
+    } catch (...) {
+        ignoreExceptionInDestructor();
+    }
 
     assert(expectedSubstitutions == 0);
     assert(expectedDownloadSize == 0);
@@ -201,9 +248,10 @@ void Worker::childStarted(
     child.timeStarted = child.lastOutput = steady_time_point::clock::now();
     child.inBuildSlot = inBuildSlot;
     child.respectTimeouts = respectTimeouts;
+    child.jobCategory = goal->jobCategory();
     children.emplace_back(child);
     if (inBuildSlot) {
-        switch (goal->jobCategory()) {
+        switch (child.jobCategory) {
         case JobCategory::Substitution:
             nrSubstitutions++;
             break;
@@ -220,18 +268,13 @@ void Worker::childStarted(
 
 void Worker::childTerminated(Goal * goal)
 {
-    childTerminated(goal, goal->jobCategory());
-}
-
-void Worker::childTerminated(Goal * goal, JobCategory jobCategory)
-{
     // FIXME: Inefficient. Make children a map from Goal -> Child instead.
     auto i = std::find_if(children.begin(), children.end(), [&](const Child & child) { return child.goal2 == goal; });
     if (i == children.end())
         return;
 
     if (i->inBuildSlot) {
-        switch (jobCategory) {
+        switch (i->jobCategory) {
         case JobCategory::Substitution:
             assert(nrSubstitutions > 0);
             nrSubstitutions--;
@@ -271,6 +314,21 @@ void Worker::waitForAWhile(GoalPtr goal)
 {
     goal->trace("wait for a while");
     addToWeakGoals(waitingForAWhile, goal);
+}
+
+void Worker::waitForHook(GoalPtr goal)
+{
+    goal->trace("wait for the build hook");
+    addToWeakGoals(wantingHook, goal);
+}
+
+void Worker::releaseHook()
+{
+    hookBusy = false;
+    for (auto & i : wantingHook)
+        if (auto goal = i.lock())
+            wakeUp(goal);
+    wantingHook.clear();
 }
 
 void Worker::waitForCompletion(GoalPtr goal)
@@ -348,7 +406,7 @@ void Worker::run(const Goals & _topGoals)
         if (!children.empty() || !waitingForAWhile.empty() || !waitingForCompletion.empty())
             waitForInput();
         else if (awake.empty() && 0U == settings.maxBuildJobs) {
-            if (Machine::parseConfig({nix::settings.thisSystem}, nix::settings.getWorkerSettings().builders).empty())
+            if (remoteMachines().empty())
                 throw Error(
                     "Unable to start any build; either increase '--max-jobs' or enable remote builds.\n"
                     "\n"
@@ -451,11 +509,101 @@ void Worker::waitForInput()
     }
 #endif
 
-    state.poll(
-#ifdef _WIN32
-        ioport.get(),
+#ifndef _WIN32
+    /* Block in the event loop rather than in `poll()`, so that one wait
+       covers the child pipes, the wake-up pipe and the descriptors that
+       the coroutines of remote builds have registered with the loop.
+       asio does not expose its reactor's descriptor, so it cannot be
+       added to `poll()`; instead each entry of `pollStatus` is watched
+       for the duration of this wait with a one-shot `async_wait`. The
+       zero-timeout `poll()` afterwards fills in `revents`, and
+       `iterate` below reads the children's data exactly as before.
+
+       Registering and releasing the children's descriptors on every
+       wait costs a reactor call each; keeping a `stream_descriptor` per
+       `Child` would avoid that, at the price of threading it through
+       `childStarted`.
+
+       asio may set `O_NONBLOCK` on a descriptor it operates on (some
+       versions do so on the first operation; `async_wait` alone may
+       not), and `release()` only hands the descriptor back, so a child
+       pipe could be left non-blocking. `iterate` reads only after
+       readiness, but it treats `EAGAIN` as a failed read, and a
+       `readLine` or `drainFD` on one of these descriptors elsewhere must
+       keep blocking as it always did. Remember each descriptor's flags
+       and put them back once asio has let go.
+
+       These descriptors belong to the children and to the wake-up pipe,
+       not to this wait: a `stream_descriptor` that still holds one when
+       it is destroyed closes it. `Watched` gives every descriptor back
+       in its destructor, so that a throw here never closes one. */
+    {
+        struct Watched
+        {
+            asio::posix::stream_descriptor descriptor;
+            Descriptor fd;
+            int flags;
+
+            Watched(asio::io_context & ctx, Descriptor fd, int flags)
+                : descriptor(ctx, fd)
+                , fd(fd)
+                , flags(flags)
+            {
+            }
+
+            Watched(const Watched &) = delete;
+            Watched(Watched &&) = delete;
+
+            ~Watched()
+            {
+                if (descriptor.is_open()) {
+                    boost::system::error_code ec;
+                    descriptor.cancel(ec);
+                    descriptor.release();
+                }
+            }
+        };
+
+        std::list<Watched> watched;
+        for (auto & entry : state.pollStatus) {
+            int flags = fcntl(entry.fd, F_GETFL);
+            if (flags == -1)
+                throw SysError("getting the flags of descriptor %d", entry.fd);
+            watched.emplace_back(ioContext, entry.fd, flags);
+            watched.back().descriptor.async_wait(
+                asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
+        }
+
+        ioContext.restart();
+        if (useTimeout)
+            ioContext.run_one_for(std::chrono::seconds(timeout));
+        else
+            ioContext.run_one();
+        /* Run whatever else became ready at the same time, which
+           includes resuming coroutines whose I/O completed. Bounded: a
+           coroutine whose reads keep completing at once (a copy over a
+           fast pipe) would otherwise keep the loop here, and the
+           children's pipes and timeouts would not be looked at until
+           its data ran dry. */
+        for (unsigned int n = 0; n < 64 && ioContext.poll_one(); ++n)
+            ;
+
+        for (auto & w : watched) {
+            w.descriptor.cancel();
+            w.descriptor.release();
+            /* The wake-up pipe is non-blocking by design and keeps it. */
+            if (!(w.flags & O_NONBLOCK) && fcntl(w.fd, F_SETFL, w.flags) == -1)
+                throw SysError("restoring the flags of descriptor %d", w.fd);
+        }
+        /* The cancelled waits post their (empty) handlers; drain them so
+           they do not count as work on the next wait. */
+        ioContext.poll();
+    }
+
+    state.poll(std::optional{0u});
+#else
+    state.poll(ioport.get(), useTimeout ? (std::optional{timeout * 1000}) : std::nullopt);
 #endif
-        useTimeout ? (std::optional{timeout * 1000}) : std::nullopt);
 
     auto after = steady_time_point::clock::now();
 
@@ -516,6 +664,19 @@ void Worker::waitForInput()
     }
 }
 
+Machines & Worker::remoteMachines()
+{
+    if (!remoteMachines_) {
+        try {
+            remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
+        } catch (Error & e) {
+            logError(e.info());
+            remoteMachines_ = Machines{};
+        }
+    }
+    return *remoteMachines_;
+}
+
 std::weak_ptr<Worker::Waker> Worker::getCrossThreadWaker()
 {
     return wakerState.get_ptr();
@@ -541,6 +702,11 @@ void Worker::Waker::wakeAll(Worker & worker)
 void Worker::Waker::enqueue(WeakGoalPtr goal)
 {
     wakeupQueue_.lock()->push(goal);
+    wake();
+}
+
+void Worker::Waker::wake()
+{
 #ifdef _WIN32
     PostQueuedCompletionStatus(
         ioport, /*dwNumberOfBytesTransferred=*/0, /*dwCompletionKey=*/0, /*lpOverlapped=*/nullptr);

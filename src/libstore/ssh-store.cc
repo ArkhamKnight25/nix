@@ -51,13 +51,38 @@ public:
 
     ref<const Config> config;
 
-    SSHStore(ref<const Config> config)
+    /**
+     * Set when the store is driven from inside a stackful coroutine;
+     * see `SSHStoreConfig::openStoreAsync`. Connections then suspend
+     * that coroutine instead of blocking the thread.
+     */
+    struct AsyncContext
+    {
+        asio::io_context & ctx;
+        asio::yield_context yield;
+        /**
+         * For the connections' `messageLogger`, when set.
+         */
+        std::shared_ptr<Logger> messageLogger;
+    };
+
+    std::optional<AsyncContext> async;
+
+    SSHStore(ref<const Config> config, std::optional<AsyncContext> async = std::nullopt)
         : Store{*config}
         , RemoteStore{*config}
         , config{config}
+        , async(std::move(async))
         , master(config->createSSHMaster(
               // Use SSH master only if using more than 1 connection.
-              connections->capacity() > 1))
+              // Not from a coroutine: waiting for the master to start
+              // is a blocking read, which would stall the worker.
+              connections->capacity() > 1 && !this->async.has_value(),
+              INVALID_DESCRIPTOR,
+              /* Opened from a coroutine (`openStoreAsync`): ssh must
+                 not prompt. `this->async`: the parameter was moved
+                 from above. */
+              /*batchMode=*/this->async.has_value()))
     {
     }
 
@@ -77,9 +102,73 @@ protected:
     public:
         std::unique_ptr<SSHMaster::Connection> sshConn;
 
+        /**
+         * Set when the streams are asynchronous. The pipes then belong
+         * to the streams, not to `sshConn`, and the writing side is
+         * closed through here.
+         */
+        AsyncFdSink * asyncSink = nullptr;
+
+        /**
+         * Blocking streams on the pipes to the ssh child.
+         */
+        Connection(std::unique_ptr<SSHMaster::Connection> sshConn)
+            : RemoteStore::Connection(
+                  std::make_unique<FdSink>(sshConn->in.get()), std::make_unique<FdSource>(sshConn->out.get()))
+            , sshConn(std::move(sshConn))
+        {
+        }
+
+        /**
+         * The daemon's replies, with the message `RemoteStore::initConnection`
+         * gives a blocking `FdSource`; it cannot tell this stream apart.
+         */
+        static std::unique_ptr<AsyncFdSource> daemonSource(const AsyncContext & async, AutoCloseFD fd)
+        {
+            auto source = std::make_unique<AsyncFdSource>(async.ctx, async.yield, std::move(fd));
+            source->endOfFileError = "Nix daemon disconnected unexpectedly (maybe it crashed?)";
+            return source;
+        }
+
+        /**
+         * Streams that suspend the coroutine `async` belongs to. They
+         * take the pipes over from `sshConn`.
+         */
+        Connection(std::unique_ptr<SSHMaster::Connection> sshConn, const AsyncContext & async)
+            : RemoteStore::Connection(
+                  std::make_unique<AsyncFdSink>(async.ctx, async.yield, std::move(sshConn->in)),
+                  daemonSource(async, std::move(sshConn->out)))
+            , sshConn(std::move(sshConn))
+            , asyncSink(static_cast<AsyncFdSink *>(ownedTo.get()))
+        {
+        }
+
+        ~Connection()
+        {
+            /* `~BasicClientConnection` flushes `to`. An asynchronous
+               flush would switch contexts during destruction, which
+               may be stack unwinding after a cancelled operation; drop
+               the (normally empty) buffer instead. */
+            if (asyncSink)
+                asyncSink->close();
+        }
+
+        Descriptor fromFd() const override
+        {
+            return asyncSink ? INVALID_DESCRIPTOR : sshConn->out.get();
+        }
+
+        Descriptor toFd() const override
+        {
+            return asyncSink ? INVALID_DESCRIPTOR : sshConn->in.get();
+        }
+
         void closeWrite() override
         {
-            sshConn->in.close();
+            if (asyncSink)
+                asyncSink->close();
+            else
+                sshConn->in.close();
         }
     };
 
@@ -216,6 +305,12 @@ ref<Store> SSHStore::Config::openStore() const
     return make_ref<SSHStore>(ref{shared_from_this()});
 }
 
+ref<Store> SSHStore::Config::openStoreAsync(
+    asio::io_context & ctx, asio::yield_context yield, std::shared_ptr<Logger> messageLogger) const
+{
+    return make_ref<SSHStore>(ref{shared_from_this()}, SSHStore::AsyncContext{ctx, yield, std::move(messageLogger)});
+}
+
 ref<Store> MountedSSHStore::Config::openStore() const
 {
     return make_ref<MountedSSHStore>(ref{std::dynamic_pointer_cast<const MountedSSHStore::Config>(shared_from_this())});
@@ -223,7 +318,6 @@ ref<Store> MountedSSHStore::Config::openStore() const
 
 ref<RemoteStore::Connection> SSHStore::openConnection()
 {
-    auto conn = make_ref<Connection>();
     Strings command = config->remoteProgram.get();
     command.push_back("--stdio");
     if (config->remoteStore.get() != "") {
@@ -231,9 +325,31 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
         command.push_back(config->remoteStore.get());
     }
     command.insert(command.end(), extraRemoteProgramArgs.begin(), extraRemoteProgramArgs.end());
-    conn->sshConn = master.startCommand(toOsStrings(std::move(command)));
-    conn->to = FdSink(conn->sshConn->in.get());
-    conn->from = FdSource(conn->sshConn->out.get());
+
+    if (!async)
+        return make_ref<Connection>(master.startCommand(toOsStrings(std::move(command))));
+
+    /* Inside a coroutine: do not wait for ssh's `started` line in
+       `startCommand`, which would block the thread; read it through
+       the asynchronous source instead, where it suspends. */
+    auto sshConn = master.startCommand(toOsStrings(std::move(command)), {}, /*awaitStarted=*/false);
+    bool startedLinePending = sshConn->startedLinePending;
+    auto conn = make_ref<Connection>(std::move(sshConn), *async);
+    if (async->messageLogger)
+        conn->messageLogger = async->messageLogger.get();
+    if (startedLinePending) {
+        std::string reply;
+        try {
+            reply = conn->from.readLine(/*eofOk=*/true);
+        } catch (EndOfFile &) {
+        }
+        /* ssh has connected or given up; the logger may draw again. */
+        conn->sshConn->loggerSuspension.reset();
+        if (reply != "started") {
+            printTalkative("SSH stdout first line: %s", reply);
+            throw Error("failed to start SSH connection to '%s'", config->getHumanReadableURI());
+        }
+    }
     return conn;
 }
 

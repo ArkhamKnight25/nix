@@ -10,6 +10,7 @@
 #include "nix/store/pathlocks.hh"
 #include "nix/store/build/goal.hh"
 #include "nix/store/build/build-log.hh"
+#include "nix/store/machine-selection.hh"
 
 namespace nix {
 
@@ -90,9 +91,69 @@ private:
         PathLocks outputLocks);
 
     /**
-     * Is the build hook willing to perform the build?
+     * Is the build hook willing to perform the build? The hook's reply
+     * is awaited through the worker's poll loop, so other goals keep
+     * running while the hook selects a machine and connects to it. On
+     * `rpAccept` the hook and the machine it named are left in
+     * `hookAccepted` and `hookMachineName` for `buildWithHook`.
      */
-    HookReply tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+    Co<HookReply> tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /**
+     * The hook that accepted this build, and the machine it named,
+     * between `tryBuildHook` and `buildWithHook`.
+     */
+    std::unique_ptr<HookInstance> hookAccepted;
+    std::string hookMachineName;
+#endif
+
+    /**
+     * The answer to a request for a remote build, from whichever side
+     * handles it: the configured hook program (`machine` empty; the
+     * accepting hook is `worker.hook`) or the worker itself (`machine`
+     * holds the slot it reserved).
+     */
+    struct RemoteReply
+    {
+        HookReply reply = rpDecline;
+        std::optional<AcquiredMachine> machine;
+    };
+
+    /**
+     * Ask for a remote build: of the hook program when `build-hook` is
+     * set, otherwise of the worker's own remote builder. A coroutine
+     * because the hook's reply is awaited through the poll loop; the
+     * worker's own answer is immediate.
+     */
+    Co<RemoteReply> tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /**
+     * The worker's own answer, with no hook process: reserve a slot on
+     * the least loaded machine that can run this build. Lock files
+     * only, so this is synchronous. `rpPostpone` when every fitting
+     * machine is full and we cannot build locally either, `rpDecline`
+     * when none fits.
+     */
+    RemoteReply selectRemoteMachine(const DerivationOptions<StorePath> & drvOptions);
+
+    /**
+     * Build on the machine `selectRemoteMachine` reserved. The
+     * connection, the copies and the build run as a stackful coroutine
+     * on `worker.ioContext` (see `buildOnRemoteMachine`), so the worker
+     * keeps running other goals meanwhile; this goal sleeps until the
+     * coroutine is done. Returns `std::nullopt` when the machine could
+     * not be reached after all (or the next one is for the hook
+     * process); the caller then asks `tryRemoteBuilder` again.
+     */
+    Co<std::optional<Result>> buildRemotely(
+        AcquiredMachine machine,
+        const DerivationOptions<StorePath> & drvOptions,
+        const StorePathSet & inputPaths,
+        std::map<std::string, InitialOutput> & initialOutputs,
+        PathLocks outputLocks);
+#endif
 
     BuildError logLimitExceeded();
 

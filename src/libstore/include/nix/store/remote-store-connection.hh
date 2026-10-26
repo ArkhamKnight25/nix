@@ -10,13 +10,36 @@
 namespace nix {
 
 /**
+ * The streams a `RemoteStore::Connection` talks through. Any buffered
+ * pair will do: `FdSink`/`FdSource` for a connection driven by blocking
+ * I/O, `AsyncFdSink`/`AsyncFdSource` for one driven from inside a
+ * stackful coroutine (see `SSHStore`).
+ *
+ * A separate base class, listed first, so that the streams outlive
+ * `BasicClientConnection`, whose destructor flushes `to`: bases are
+ * destroyed in reverse order of declaration, members before any base.
+ */
+struct RemoteStore::ConnectionStreams
+{
+    /**
+     * Named apart from `BasicConnection::to`/`from`, the references
+     * that the protocol code uses, so that an unqualified `to` in a
+     * `Connection` can only mean the reference.
+     */
+    std::unique_ptr<BufferedSink> ownedTo;
+    std::unique_ptr<BufferedSource> ownedFrom;
+};
+
+/**
  * Bidirectional connection (send and receive) used by the Remote Store
  * implementation.
  *
  * Contains `Source` and `Sink` for actual communication, along with
  * other information learned when negotiating the connection.
  */
-struct RemoteStore::Connection : WorkerProto::BasicClientConnection, WorkerProto::ClientHandshakeInfo
+struct RemoteStore::Connection : RemoteStore::ConnectionStreams,
+                                 WorkerProto::BasicClientConnection,
+                                 WorkerProto::ClientHandshakeInfo
 {
 private:
     /* VTable anchor to avoid weak linkage of the vtable - it breaks
@@ -24,6 +47,25 @@ private:
     virtual void anchor();
 
 public:
+    Connection(std::unique_ptr<BufferedSink> to, std::unique_ptr<BufferedSource> from)
+        : ConnectionStreams{std::move(to), std::move(from)}
+        , BasicClientConnection(*ownedTo, *ownedFrom)
+    {
+    }
+
+    /**
+     * The descriptor behind `from`, or `INVALID_DESCRIPTOR` when the
+     * stream does not expose one. `shutdownConnections()` uses it to
+     * break a blocking read from another thread, and `nix-daemon
+     * --stdio` to forward the raw connection.
+     */
+    virtual Descriptor fromFd() const = 0;
+
+    /**
+     * The descriptor behind `to`; see `fromFd`.
+     */
+    virtual Descriptor toFd() const = 0;
+
     /**
      * Time this connection was established.
      */

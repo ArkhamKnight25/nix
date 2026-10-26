@@ -10,18 +10,31 @@ struct WorkerProto::BasicConnection
 {
     /**
      * Send with this.
+     *
+     * A reference rather than an `FdSink`, so that the same protocol
+     * code can drive a connection through whatever buffered stream its
+     * owner provides: a blocking `FdSink` in a thread, or an
+     * `AsyncFdSink` inside a stackful coroutine, where a write that
+     * would block suspends the coroutine instead of the thread. The
+     * owner keeps the stream alive for as long as the connection.
      */
-    FdSink to;
+    BufferedSink & to;
 
     /**
-     * Receive with this.
+     * Receive with this. See `to`.
      */
-    FdSource from;
+    BufferedSource & from;
 
     /**
      * The protocol version agreed by both sides.
      */
     WorkerProto::Version protoVersion;
+
+    BasicConnection(BufferedSink & to, BufferedSource & from)
+        : to(to)
+        , from(from)
+    {
+    }
 
     /**
      * Coercion to `WorkerProto::ReadConn`. This makes it easy to use the
@@ -58,6 +71,17 @@ struct WorkerProto::BasicConnection
 
 struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
 {
+    using BasicConnection::BasicConnection;
+
+    /**
+     * Where the daemon's log messages, activities and results go when
+     * `processStderr` reads them: the process's `logger`, looked up at
+     * that moment (it may be replaced after this connection is made),
+     * unless the connection's owner wants to see them pass, as the
+     * in-process remote builder does to write the build's log file.
+     */
+    Logger * messageLogger = nullptr;
+
     /**
      * Flush to direction
      */
@@ -124,6 +148,23 @@ struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
 
 struct WorkerProto::BasicServerConnection : WorkerProto::BasicConnection
 {
+    /**
+     * The descriptors the daemon serves on; `to` and `from` refer to
+     * these. The base class binds its references before these members
+     * are constructed, which is fine: it only takes their addresses.
+     */
+    FdSink toFd;
+    FdSource fromFd;
+
+    BasicServerConnection()
+        : BasicConnection(toFd, fromFd)
+    {
+    }
+
+    /* `to` and `from` refer into this object. */
+    BasicServerConnection(const BasicServerConnection &) = delete;
+    BasicServerConnection(BasicServerConnection &&) = delete;
+
     /**
      * Establishes connection, negotiating version.
      *
