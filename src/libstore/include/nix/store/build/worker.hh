@@ -9,6 +9,7 @@
 #include "nix/store/build-result.hh"
 #include "nix/store/realisation.hh"
 #include "nix/util/muxable-pipe.hh"
+#include "nix/util/async.hh"
 
 #include <functional>
 #include <future>
@@ -231,6 +232,18 @@ public:
 #ifdef _WIN32
     AutoCloseFD ioport;
 #endif
+
+    /**
+     * The event loop behind `waitForInput`. Besides the child pipes
+     * and the wake-up pipe, which `waitForInput` registers with it for
+     * the duration of each wait, it serves the descriptors of the
+     * stackful coroutines that build on remote machines (see
+     * `DerivationBuildingGoal::buildRemotely`): their reads and writes
+     * suspend the coroutine, and this loop resumes it when the
+     * descriptor is ready. Everything runs on the worker's thread; no
+     * other thread touches it.
+     */
+    asio::io_context ioContext;
 
     Store & store;
     Store & evalStore;

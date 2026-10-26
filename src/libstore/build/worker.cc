@@ -14,6 +14,12 @@
 #include "nix/util/signals.hh"
 #include "nix/store/globals.hh"
 
+#include <list>
+
+#ifndef _WIN32
+#  include <boost/asio/posix/stream_descriptor.hpp>
+#endif
+
 namespace nix {
 
 Worker::Worker(Store & store, Store & evalStore)
@@ -49,6 +55,15 @@ Worker::~Worker()
        are in trouble, since goals may call childTerminated() etc. in
        their destructors). */
     topGoals.clear();
+
+    /* Destroying the goals cancelled the coroutines of any remote
+       builds still in flight. Each has an operation pending on the
+       event loop that now completes with `operation_aborted`; let them
+       unwind and release their connections (which kills the ssh
+       children) before the loop itself goes away. Nothing else is left
+       on the loop, so this returns as soon as they are done. */
+    ioContext.restart();
+    ioContext.run();
 
     assert(expectedSubstitutions == 0);
     assert(expectedDownloadSize == 0);
@@ -451,11 +466,53 @@ void Worker::waitForInput()
     }
 #endif
 
-    state.poll(
-#ifdef _WIN32
-        ioport.get(),
+#ifndef _WIN32
+    /* Block in the event loop rather than in `poll()`, so that one wait
+       covers the child pipes, the wake-up pipe and the descriptors that
+       the coroutines of remote builds have registered with the loop.
+       asio does not expose its reactor's descriptor, so it cannot be
+       added to `poll()`; instead each entry of `pollStatus` is watched
+       for the duration of this wait with a one-shot `async_wait`. The
+       zero-timeout `poll()` afterwards fills in `revents`, and
+       `iterate` below reads the children's data exactly as before.
+
+       Registering and releasing the children's descriptors on every
+       wait costs a reactor call each; keeping a `stream_descriptor` per
+       `Child` would avoid that, at the price of threading it through
+       `childStarted`. Note that asio puts a watched descriptor into
+       non-blocking mode and leaves it there, which `iterate` does not
+       mind (it reads only after readiness), but any blocking read on one
+       of these descriptors elsewhere would now see `EAGAIN`. */
+    {
+        std::list<asio::posix::stream_descriptor> watched;
+        for (auto & entry : state.pollStatus) {
+            watched.emplace_back(ioContext, entry.fd);
+            watched.back().async_wait(
+                asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
+        }
+
+        ioContext.restart();
+        if (useTimeout)
+            ioContext.run_one_for(std::chrono::seconds(timeout));
+        else
+            ioContext.run_one();
+        /* Run whatever else became ready at the same time, which
+           includes resuming coroutines whose I/O completed. */
+        ioContext.poll();
+
+        for (auto & descriptor : watched) {
+            descriptor.cancel();
+            descriptor.release();
+        }
+        /* The cancelled waits post their (empty) handlers; drain them so
+           they do not count as work on the next wait. */
+        ioContext.poll();
+    }
+
+    state.poll(std::optional{0u});
+#else
+    state.poll(ioport.get(), useTimeout ? (std::optional{timeout * 1000}) : std::nullopt);
 #endif
-        useTimeout ? (std::optional{timeout * 1000}) : std::nullopt);
 
     auto after = steady_time_point::clock::now();
 
