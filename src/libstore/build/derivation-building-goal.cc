@@ -1384,12 +1384,40 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
 struct RemoteBuildLogger : Logger
 {
     Logger & next;
-    LogFile logFile;
 
-    RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath)
+    /**
+     * Open until `closeLogFile()`, or until the last reference to this
+     * logger goes: the goal's, or the coroutine's if it outlives the
+     * goal.
+     */
+    std::unique_ptr<LogFile> logFile;
+
+    /**
+     * `max-log-size`, as `buildWithHook` enforced it on the bytes it saw:
+     * once the build's lines exceed `maxLogSize`, `logLimitExceeded` is
+     * set and `onLogLimitExceeded` called, once. The goal uses it to
+     * cancel the remote build and report `logLimitExceeded()`.
+     */
+    uint64_t maxLogSize;
+    uint64_t logSize = 0;
+    bool logLimitExceeded = false;
+    fun<void()> onLogLimitExceeded;
+
+    RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath, uint64_t maxLogSize)
         : next(next)
-        , logFile(store, drvPath, settings.getLogFileSettings())
+        , logFile(std::make_unique<LogFile>(store, drvPath, settings.getLogFileSettings()))
+        , maxLogSize(maxLogSize)
     {
+    }
+
+    /**
+     * Finish and close the log file now, so that `nix log` finds it
+     * complete as soon as the goal has its result, whatever still holds
+     * this logger. Lines arriving afterwards are forwarded but not kept.
+     */
+    void closeLogFile()
+    {
+        logFile.reset();
     }
 
     void stop() override
@@ -1447,22 +1475,30 @@ struct RemoteBuildLogger : Logger
     {
         next.result(act, type, fields);
 
-        if (!logFile.sink || fields.empty())
+        if (fields.empty())
             return;
         auto * s = std::get_if<std::string>(&fields[0]);
         if (!s)
             return;
         try {
-            if (type == resBuildLogLine)
-                (*logFile.sink)(*s + "\n");
-            else if (type == resSetPhase) {
+            if (type == resBuildLogLine) {
+                logSize += s->size() + 1;
+                if (maxLogSize && logSize > maxLogSize && !logLimitExceeded) {
+                    logLimitExceeded = true;
+                    if (onLogLimitExceeded)
+                        onLogLimitExceeded();
+                    return;
+                }
+                if (logFile && logFile->sink)
+                    (*logFile->sink)(*s + "\n");
+            } else if (type == resSetPhase && logFile && logFile->sink) {
                 // nixpkgs' stdenv produces lines in the log to signal
                 // phase changes.
                 // We want to get the same lines in case of remote builds.
                 // The format is:
                 //   @nix { "action": "setPhase", "phase": "$curPhase" }
                 const auto logLine = nlohmann::json::object({{"action", "setPhase"}, {"phase", *s}});
-                (*logFile.sink)(
+                (*logFile->sink)(
                     "@nix " + logLine.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + "\n");
             }
         } catch (...) {
@@ -1510,9 +1546,11 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         wantedOutputs.insert(outputName);
     }
 
-    /* Opens the log file. Closing it is left to whoever drops the last
-       reference: us below, or the coroutine if it outlives us. */
-    auto remoteLogger = std::make_shared<RemoteBuildLogger>(*logger, worker.store, drvPath);
+    /* Opens the log file. We close it once woken; whoever drops the
+       last reference (the coroutine, if it outlives us) closes it
+       otherwise. */
+    auto remoteLogger =
+        std::make_shared<RemoteBuildLogger>(*logger, worker.store, drvPath, worker.settings.maxLogSize);
 
     auto request = std::make_shared<RemoteMachineBuildRequest>(RemoteMachineBuildRequest{
         .drvPath = drvPath,
@@ -1534,10 +1572,9 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
     msg += fmt(" on '%s'", machineName);
 
     /* The machine's log lines reach `logger` through `remoteLogger`,
-       which writes the log file. `buildWithHook` also kept a tail for
-       the error message and enforced `max-log-size`; the machine's own
-       failure message carries its tail, and the size limit is not
-       enforced here yet. */
+       which writes the log file and counts them against `max-log-size`.
+       `buildWithHook` also kept a tail for the error message; the
+       machine's own failure message carries its tail. */
     Activity act(
         *logger,
         lvlInfo,
@@ -1576,6 +1613,17 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         }
     } cancelOnExit{state};
 
+    /* The limit is noticed inside the coroutine, in `processStderr`, so
+       cancel from the loop instead: by the time the posted handler runs
+       the coroutine is suspended on its next operation, which the
+       cancellation then fails, as it would for a destroyed goal. */
+    remoteLogger->onLogLimitExceeded = [state, &ctx = worker.ioContext]() {
+        asio::post(ctx, [state]() {
+            if (!state->done)
+                state->cancel.emit(asio::cancellation_type::terminal);
+        });
+    };
+
     asio::spawn(
         worker.ioContext,
         [&store = worker.store,
@@ -1605,11 +1653,22 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
 
     trace("remote build done");
 
-    /* Close the log file. */
+    /* Close the log file; the coroutine's function object or completion
+       handler may still hold the logger for a moment. */
+    remoteLogger->closeLogFile();
+    bool logLimitHit = remoteLogger->logLimitExceeded;
     remoteLogger.reset();
 
     buildResult.timesBuilt++;
     buildResult.stopTime = time(nullptr);
+
+    if (logLimitHit) {
+        /* We cancelled the build; the error in `state` is its aborted
+           operation, not the story. The connection's teardown stops the
+           machine's build, as killing the hook did. */
+        outputLocks.unlock();
+        co_return logLimitExceeded();
+    }
 
     if (state->error) {
         outputLocks.unlock();
