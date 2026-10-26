@@ -8,6 +8,8 @@
 
 #include <boost/asio/steady_timer.hpp>
 
+#include <atomic>
+
 namespace nix {
 
 /**
@@ -17,14 +19,27 @@ namespace nix {
  * while it is talked to. `mounted-ssh-ng` has its own store class and
  * is left to the blocking path too.
  */
-static ref<Store> openMachineStore(const RemoteMachineBuildRequest & req, const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
+static ref<Store> openMachineStore(
+    const RemoteMachineBuildRequest & req, const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
 {
     auto storeUri = machine.completeStoreReference();
-    /* The hook had the legacy `ssh://` store write the build log to its
-       descriptor 4, the pipe to the hook's parent. Inside the worker
-       descriptor 4 is whatever it happens to be; those logs are not
-       collected yet. */
-    storeUri.params.erase("log-fd");
+
+    /* `Machine::completeStoreReference` points the legacy `ssh://`
+       store's `log-fd` at descriptor 4: the hook's pipe to its parent,
+       where ssh's stderr, carrying the remote build's log, was read by
+       the parent and written into the log file. Inside the worker there
+       is no such descriptor, and nobody could read a pipe in its place:
+       this store blocks the thread for the whole of `buildDerivation`,
+       and the ssh child would stall once the pipe filled. The log is
+       therefore not kept for these machines; say so, once. */
+    if (storeUri.params.erase("log-fd")) {
+        static std::atomic<bool> warned = false;
+        if (!warned.exchange(true))
+            warn(
+                "remote builder '%s' is a legacy `ssh://` store: the logs of builds done there are not kept, so "
+                "`nix log` will not show them; use `ssh-ng://` instead",
+                machine.storeUri.render());
+    }
 
     auto config = resolveStoreConfig(std::move(storeUri));
     if (!config.dynamic_pointer_cast<const MountedSSHStoreConfig>())
