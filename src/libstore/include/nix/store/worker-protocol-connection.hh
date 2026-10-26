@@ -10,18 +10,28 @@ struct WorkerProto::BasicConnection
 {
     /**
      * Send with this.
+     *
+     * A reference, so that the stream can be an `FdSink` or, from a
+     * coroutine, an `AsyncFdSink`. The owner keeps it alive as long as
+     * the connection.
      */
-    FdSink to;
+    BufferedSink & to;
 
     /**
-     * Receive with this.
+     * Receive with this. See `to`.
      */
-    FdSource from;
+    BufferedSource & from;
 
     /**
      * The protocol version agreed by both sides.
      */
     WorkerProto::Version protoVersion;
+
+    BasicConnection(BufferedSink & to, BufferedSource & from)
+        : to(to)
+        , from(from)
+    {
+    }
 
     /**
      * Coercion to `WorkerProto::ReadConn`. This makes it easy to use the
@@ -58,6 +68,15 @@ struct WorkerProto::BasicConnection
 
 struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
 {
+    using BasicConnection::BasicConnection;
+
+    /**
+     * Where `processStderr` sends the daemon's log messages, activities
+     * and results. If null, the global `logger` at the time of the call,
+     * which may have changed since the connection was made.
+     */
+    Logger * messageLogger = nullptr;
+
     /**
      * Flush to direction
      */
@@ -124,6 +143,23 @@ struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
 
 struct WorkerProto::BasicServerConnection : WorkerProto::BasicConnection
 {
+    /**
+     * The streams `to` and `from` refer to. The base binds its references
+     * before these are constructed, which is safe as it only takes their
+     * addresses.
+     */
+    FdSink toFd;
+    FdSource fromFd;
+
+    BasicServerConnection()
+        : BasicConnection(toFd, fromFd)
+    {
+    }
+
+    /* `to` and `from` refer into this object. */
+    BasicServerConnection(const BasicServerConnection &) = delete;
+    BasicServerConnection(BasicServerConnection &&) = delete;
+
     /**
      * Establishes connection, negotiating version.
      *

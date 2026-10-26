@@ -101,6 +101,26 @@ private:
     struct Connection : RemoteStore::Connection
     {
         AutoCloseFD fd;
+
+        /**
+         * Both directions go over the one socket.
+         */
+        Connection(AutoCloseFD fd)
+            : RemoteStore::Connection(std::make_unique<FdSink>(fd.get()), std::make_unique<FdSource>(fd.get()))
+            , fd(std::move(fd))
+        {
+        }
+
+        Descriptor fromFd() const override
+        {
+            return fd.get();
+        }
+
+        Descriptor toFd() const override
+        {
+            return fd.get();
+        }
+
         void closeWrite() override;
     };
 

@@ -10,13 +10,31 @@
 namespace nix {
 
 /**
+ * The streams a `RemoteStore::Connection` reads and writes through.
+ *
+ * A base listed before `BasicClientConnection`, rather than a member, so
+ * that the streams outlive its destructor, which flushes `to`.
+ */
+struct RemoteStore::ConnectionStreams
+{
+    /**
+     * Not `to`/`from`, so that those names in a `Connection` always mean
+     * the references in `BasicConnection`.
+     */
+    std::unique_ptr<BufferedSink> ownedTo;
+    std::unique_ptr<BufferedSource> ownedFrom;
+};
+
+/**
  * Bidirectional connection (send and receive) used by the Remote Store
  * implementation.
  *
  * Contains `Source` and `Sink` for actual communication, along with
  * other information learned when negotiating the connection.
  */
-struct RemoteStore::Connection : WorkerProto::BasicClientConnection, WorkerProto::ClientHandshakeInfo
+struct RemoteStore::Connection : RemoteStore::ConnectionStreams,
+                                 WorkerProto::BasicClientConnection,
+                                 WorkerProto::ClientHandshakeInfo
 {
 private:
     /* VTable anchor to avoid weak linkage of the vtable - it breaks
@@ -24,6 +42,24 @@ private:
     virtual void anchor();
 
 public:
+    Connection(std::unique_ptr<BufferedSink> to, std::unique_ptr<BufferedSource> from)
+        : ConnectionStreams{std::move(to), std::move(from)}
+        , BasicClientConnection(*ownedTo, *ownedFrom)
+    {
+    }
+
+    /**
+     * The descriptor behind `from`, or `INVALID_DESCRIPTOR` if the stream
+     * has none. `shutdownConnections()` uses it to break a blocking read,
+     * and `nix-daemon --stdio` to forward the raw connection.
+     */
+    virtual Descriptor fromFd() const = 0;
+
+    /**
+     * The descriptor behind `to`; see `fromFd`.
+     */
+    virtual Descriptor toFd() const = 0;
+
     /**
      * Time this connection was established.
      */

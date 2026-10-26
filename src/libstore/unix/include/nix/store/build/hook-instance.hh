@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 
 namespace nix {
 
@@ -15,8 +16,12 @@ namespace nix {
  * owned by a `Goal`. This is for efficiency: rather than starting the
  * hook every time we want to ask whether we can run a remote build
  * (which can be very often), we reuse a hook process for answering
- * those queries until it accepts a build.  So if there are N
- * derivations to be built, at most N hooks will be started.
+ * those queries until it accepts a build.
+ *
+ * One goal at a time asks the hook, owning it until the reply; others
+ * wait in `Worker::wantingHook`. After `decline` or `postpone` it goes
+ * back to `Worker::hook`, and an accepted build keeps it. So apart from
+ * those of accepted builds, at most one hook is alive.
  */
 struct HookInstance
 {
@@ -45,14 +50,37 @@ struct HookInstance
     std::map<ActivityId, Activity> activities;
 
     /**
+     * A line from `fromHook` whose newline has not arrived yet, kept for
+     * the next reader (`tryBuildHook`, then `buildWithHook`).
+     */
+    std::string partialLine;
+
+    /**
      * Callback to run when the hook process is killed in the destructor.
      * Used to call `Worker::childTerminated`.
      */
     std::function<void()> onKillChild;
 
-    HookInstance(const Strings & buildHook, std::chrono::milliseconds timeout);
+    /**
+     * Start the program named by the `build-hook` setting. At its default,
+     * `nix __build-remote`, it serves only machines that are not `ssh-ng`;
+     * the worker builds on those itself.
+     */
+    static std::unique_ptr<HookInstance> external(const Strings & buildHook, std::chrono::milliseconds timeout);
 
     ~HookInstance();
+
+private:
+
+    /**
+     * Creates the pipes.
+     */
+    HookInstance();
+
+    /**
+     * Take ownership of the started child and close its pipe ends.
+     */
+    void adopt(pid_t childPid, std::chrono::milliseconds timeout);
 };
 
 } // namespace nix

@@ -9,6 +9,8 @@
 #include "nix/store/build-result.hh"
 #include "nix/store/realisation.hh"
 #include "nix/util/muxable-pipe.hh"
+#include "nix/util/async.hh"
+#include "nix/store/machines.hh"
 
 #include <functional>
 #include <future>
@@ -56,6 +58,11 @@ struct Child
     std::set<MuxablePipePollState::CommChannel> channels;
     bool respectTimeouts;
     bool inBuildSlot;
+    /**
+     * The goal's `jobCategory()`, recorded at the start because the goal's
+     * destructor may unregister the child, when the virtual is gone.
+     */
+    JobCategory jobCategory{};
     /**
      * Time we last got output on stdout/stderr
      */
@@ -133,6 +140,13 @@ private:
     WeakGoals wantingToSubstitute;
 
     /**
+     * Goals waiting for the build hook, woken by `releaseHook`, which the
+     * `Finally` in `tryBuildHook` always reaches. All of them are woken: a
+     * single one may no longer want the hook and would never release it.
+     */
+    WeakGoals wantingHook;
+
+    /**
      * Child processes currently running.
      */
     std::list<Child> children;
@@ -181,6 +195,8 @@ private:
      */
     std::map<StorePath, bool> pathContentsGoodCache;
 
+    std::optional<Machines> remoteMachines_;
+
     class Waker
     {
 #ifndef _WIN32
@@ -210,12 +226,24 @@ private:
 
     public:
         void enqueue(WeakGoalPtr goal);
+
+        /**
+         * Make `waitForInput` return without a goal to wake; the
+         * worker then reaches `checkInterrupt()`. Safe from any thread.
+         */
+        void wake();
     };
 
     /**
      * This is behind a ref, so that other threads can take a weak_ptr to it.
      */
     ref<Waker> wakerState;
+
+    /**
+     * Wakes the worker on an interrupt. Declared after `wakerState` so
+     * that it is destroyed first.
+     */
+    std::unique_ptr<InterruptCallback> interruptCallback;
 
 public:
 
@@ -232,6 +260,13 @@ public:
     AutoCloseFD ioport;
 #endif
 
+    /**
+     * The event loop behind `waitForInput`. It also resumes the
+     * coroutines of remote builds when their descriptors are ready.
+     * Used only on the worker's thread.
+     */
+    asio::io_context ioContext;
+
     Store & store;
     Store & evalStore;
 
@@ -246,8 +281,18 @@ public:
     fun<std::list<ref<Store>>()> getSubstituters;
 
 #ifndef _WIN32 // TODO Enable building on Windows
+    /**
+     * The build hook, kept for the next goal that needs one. A goal
+     * awaiting the hook's reply owns it meanwhile.
+     */
     std::unique_ptr<HookInstance> hook;
 #endif
+
+    /**
+     * Whether a goal is awaiting the build hook's reply. Other goals
+     * wait for it with `waitForHook`.
+     */
+    bool hookBusy = false;
 
     uint64_t expectedBuilds = 0;
     uint64_t doneBuilds = 0;
@@ -268,6 +313,16 @@ public:
      * it answers with "decline-permanently", we don't try again.
      */
     bool tryBuildHook = true;
+
+    /**
+     * The configured remote builders, parsed on first use and shared by
+     * every in-process remote build of this worker. A machine that could
+     * not be reached is disabled here for the rest of the worker's life,
+     * as a hook process disabled it for the rest of its own. A
+     * `builders` setting that does not parse is reported once and
+     * yields no machines.
+     */
+    Machines & remoteMachines();
 
     Worker(Store & store, Store & evalStore);
     ~Worker();
@@ -364,19 +419,10 @@ public:
     /**
      * Unregisters a running child process.
      *
-     * This overload requires `goal` to point to a fully constructed,
-     * valid goal object, as it calls `goal->jobCategory()`.
+     * `goal` is only compared, never dereferenced, so this is safe to
+     * call from the goal's destructor.
      */
     void childTerminated(Goal * goal);
-
-    /**
-     * Unregisters a running child process, like the other overload.
-     *
-     * This overload only uses `goal` as a pointer for comparison with
-     * weak goal references, so it is safe to call from destructors
-     * where the goal object may be partially destroyed.
-     */
-    void childTerminated(Goal * goal, JobCategory jobCategory);
 
     /**
      * Put `goal` to sleep until a build slot becomes available (which
@@ -391,6 +437,16 @@ public:
      * to wait for multiple locks in the main select() loop.
      */
     void waitForAWhile(GoalPtr goal);
+
+    /**
+     * Put `goal` to sleep until the build hook is released.
+     */
+    void waitForHook(GoalPtr goal);
+
+    /**
+     * Clear `hookBusy` and wake up the goals waiting for the hook.
+     */
+    void releaseHook();
 
     /**
      * Wait until explicitly resumed by Waker::enqueue.

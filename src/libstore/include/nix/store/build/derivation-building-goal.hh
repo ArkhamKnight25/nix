@@ -10,6 +10,7 @@
 #include "nix/store/pathlocks.hh"
 #include "nix/store/build/goal.hh"
 #include "nix/store/build/build-log.hh"
+#include "nix/store/machine-selection.hh"
 
 namespace nix {
 
@@ -90,9 +91,55 @@ private:
         PathLocks outputLocks);
 
     /**
-     * Is the build hook willing to perform the build?
+     * Is the build hook willing to perform the build? On `rpAccept`, the
+     * hook and the machine it named are left in `hookAccepted` and
+     * `hookMachineName` for `buildWithHook`.
      */
-    HookReply tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+    Co<HookReply> tryBuildHook(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /** The accepting hook and its machine, for `buildWithHook`. */
+    std::unique_ptr<HookInstance> hookAccepted;
+    std::string hookMachineName;
+#endif
+
+    /**
+     * A reply to a remote build request. `machine` holds the slot the
+     * worker reserved, and is empty when the hook program answered.
+     */
+    struct RemoteReply
+    {
+        HookReply reply = rpDecline;
+        std::optional<AcquiredMachine> machine;
+    };
+
+    /**
+     * Ask for a remote build: of the hook program when `build-hook` is
+     * set, otherwise of the worker's own remote builder.
+     */
+    Co<RemoteReply> tryRemoteBuilder(const DerivationOptions<StorePath> & drvOptions);
+
+#ifndef _WIN32
+    /**
+     * Reserve a slot on the least loaded machine that can run this build,
+     * replying as the hook would. Takes lock files only, so it need not
+     * be a coroutine.
+     */
+    RemoteReply selectRemoteMachine(const DerivationOptions<StorePath> & drvOptions);
+
+    /**
+     * Build on the machine `selectRemoteMachine` reserved, in a stackful
+     * coroutine on `worker.ioContext` so that other goals keep running.
+     * Returns `std::nullopt` when no machine could be reached after all;
+     * the caller then asks `tryRemoteBuilder` again.
+     */
+    Co<std::optional<Result>> buildRemotely(
+        AcquiredMachine machine,
+        const DerivationOptions<StorePath> & drvOptions,
+        const StorePathSet & inputPaths,
+        std::map<std::string, InitialOutput> & initialOutputs,
+        PathLocks outputLocks);
+#endif
 
     BuildError logLimitExceeded();
 

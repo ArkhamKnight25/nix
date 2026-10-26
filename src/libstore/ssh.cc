@@ -83,7 +83,8 @@ SSHMaster::SSHMaster(
     std::string_view sshPublicHostKey,
     bool useMaster,
     bool compress,
-    Descriptor logFD)
+    Descriptor logFD,
+    bool batchMode)
     : authority(authority)
     , hostnameAndUser([authority]() {
         std::ostringstream oss;
@@ -97,6 +98,7 @@ SSHMaster::SSHMaster(
     , sshPublicHostKey(parsePublicHostKey(authority.host, sshPublicHostKey))
     , useMaster(useMaster && !fakeSSH)
     , compress(compress)
+    , batchMode(batchMode)
     , logFD(logFD)
     , tmpDir(make_ref<AutoDelete>(createTempDir("", "nix", 0700)))
 {
@@ -117,6 +119,10 @@ void SSHMaster::addCommonSSHOpts(OsStrings & args)
     }
     if (compress)
         args.push_back(OS_STR("-C"));
+    /* On every invocation for this host, the master included: a prompt
+       from any of them would stall the thread that must not block. */
+    if (batchMode)
+        args.push_back(OS_STR("-oBatchMode=yes"));
 
     if (authority.port)
         args.push_back(string_to_os_string(fmt("-p%d", *authority.port)));
@@ -158,7 +164,8 @@ static OsStringMap createSSHEnv()
     return env;
 }
 
-std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs)
+std::unique_ptr<SSHMaster::Connection>
+SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool awaitStarted)
 {
     std::filesystem::path socketPath = startMaster();
 
@@ -168,8 +175,10 @@ std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && comm
 
     auto conn = std::make_unique<Connection>();
 
+    /* In batch mode ssh cannot prompt, so suspending the logger would only
+       hide other builds' progress while it connects. */
     std::unique_ptr<Logger::Suspension> loggerSuspension;
-    if (!fakeSSH && !useMaster) {
+    if (!fakeSSH && !useMaster && !batchMode) {
         loggerSuspension = std::make_unique<Logger::Suspension>(logger->suspend());
     }
 
@@ -211,21 +220,37 @@ std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && comm
         },
         fdr);
 
+#ifndef _WIN32
+    /* With `localhost` the child is the daemon itself. SIGTERM gives it time
+       to stop its build, which nothing else does on macOS. The Windows `Pid`
+       has no kill signal to choose. */
+    if (fakeSSH) {
+        conn->sshPid.setKillSignal(SIGTERM);
+        conn->sshPid.setKillTimeout(std::chrono::seconds(10));
+    }
+#endif
+
     in.readSide.close();
     out.writeSide.close();
 
     // Wait for the SSH connection to be established,
     // So that we don't overwrite the password prompt with our progress bar.
     if (!fakeSSH && !useMaster && !isMasterRunning()) {
-        std::string reply;
-        try {
-            reply = readLine(out.readSide.get());
-        } catch (EndOfFile & e) {
-        }
+        if (!awaitStarted) {
+            /* The caller reads the line without blocking its thread. */
+            conn->startedLinePending = true;
+            conn->loggerSuspension = std::move(loggerSuspension);
+        } else {
+            std::string reply;
+            try {
+                reply = readLine(out.readSide.get());
+            } catch (EndOfFile & e) {
+            }
 
-        if (reply != "started") {
-            printTalkative("SSH stdout first line: %s", reply);
-            throw Error("failed to start SSH connection to '%s'", authority.host);
+            if (reply != "started") {
+                printTalkative("SSH stdout first line: %s", reply);
+                throw Error("failed to start SSH connection to '%s'", authority.host);
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/store/local-fs-store.hh"
 #include "nix/store/remote-store.hh"
+#include "nix/util/serialise-async.hh"
 
 namespace nix {
 
@@ -41,6 +42,18 @@ public:
     static std::string doc();
 
     ref<Store> openStore() const override;
+
+    /**
+     * Open the store for use only from the stackful coroutine that `yield`
+     * belongs to. Its connections use `AsyncFdSource`/`AsyncFdSink` on
+     * `ctx`, so an operation that would block suspends the coroutine
+     * instead of the thread.
+     *
+     * @param messageLogger Where the daemon's messages go instead of the
+     * global `logger`, if set.
+     */
+    ref<Store> openStoreAsync(
+        asio::io_context & ctx, asio::yield_context yield, std::shared_ptr<Logger> messageLogger = nullptr) const;
 
     StoreReference getReference() const override;
 };
