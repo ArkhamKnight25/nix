@@ -10,13 +10,31 @@
 namespace nix {
 
 /**
+ * The streams a `RemoteStore::Connection` talks through. Any buffered
+ * pair will do: `FdSink`/`FdSource` for a connection driven by blocking
+ * I/O, `AsyncFdSink`/`AsyncFdSource` for one driven from inside a
+ * stackful coroutine (see `SSHStore`).
+ *
+ * A separate base class, listed first, so that the streams outlive
+ * `BasicClientConnection`, whose destructor flushes `to`: bases are
+ * destroyed in reverse order of declaration, members before any base.
+ */
+struct RemoteStore::ConnectionStreams
+{
+    std::unique_ptr<BufferedSink> to;
+    std::unique_ptr<BufferedSource> from;
+};
+
+/**
  * Bidirectional connection (send and receive) used by the Remote Store
  * implementation.
  *
  * Contains `Source` and `Sink` for actual communication, along with
  * other information learned when negotiating the connection.
  */
-struct RemoteStore::Connection : WorkerProto::BasicClientConnection, WorkerProto::ClientHandshakeInfo
+struct RemoteStore::Connection : RemoteStore::ConnectionStreams,
+                                 WorkerProto::BasicClientConnection,
+                                 WorkerProto::ClientHandshakeInfo
 {
 private:
     /* VTable anchor to avoid weak linkage of the vtable - it breaks
@@ -24,23 +42,17 @@ private:
     virtual void anchor();
 
 public:
-    /**
-     * The streams that `to` and `from` refer to. Any buffered pair will
-     * do: `FdSink`/`FdSource` for a connection driven by blocking I/O,
-     * `AsyncFdSink`/`AsyncFdSource` for one driven from inside a
-     * stackful coroutine (see `SSHStore`). They are passed in rather
-     * than constructed here because the base class binds its references
-     * before our members exist.
-     */
-    std::unique_ptr<BufferedSink> toOwned;
-    std::unique_ptr<BufferedSource> fromOwned;
-
     Connection(std::unique_ptr<BufferedSink> to, std::unique_ptr<BufferedSource> from)
-        : BasicClientConnection(*to, *from)
-        , toOwned(std::move(to))
-        , fromOwned(std::move(from))
+        : ConnectionStreams{std::move(to), std::move(from)}
+        , BasicClientConnection(*ConnectionStreams::to, *ConnectionStreams::from)
     {
     }
+
+    /**
+     * The protocol streams; the owning pointers are in `ConnectionStreams`.
+     */
+    using BasicClientConnection::from;
+    using BasicClientConnection::to;
 
     /**
      * The descriptor behind `from`, or `INVALID_DESCRIPTOR` when the
