@@ -1,7 +1,9 @@
 #include "nix/store/build/remote-machine-build.hh"
 #include "nix/store/globals.hh"
 #include "nix/store/local-store.hh"
+#include "nix/store/remote-store.hh"
 #include "nix/store/ssh-store.hh"
+#include "nix/store/worker-protocol.hh"
 #include "nix/store/store-open.hh"
 #include "nix/util/experimental-features.hh"
 #include "nix/util/finally.hh"
@@ -9,6 +11,7 @@
 #include <boost/asio/steady_timer.hpp>
 
 #include <atomic>
+#include <ranges>
 
 namespace nix {
 
@@ -85,6 +88,12 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     asio::io_context & ctx,
     asio::yield_context yield)
 {
+    /* Cancelled before this first ran: the goal went away between the
+       spawn and the loop's next turn. Do not start an ssh child only to
+       tear it down again; the first operation would fail anyway. */
+    if (yield.cancelled() != asio::cancellation_type::none)
+        throw SystemError(boost::system::error_code(asio::error::operation_aborted), "remote build cancelled");
+
     auto currentLoad = getCurrentLoadDir(store);
 
     /* Connect, moving on to the next machine when one cannot be
@@ -123,9 +132,22 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
 
     auto substitute = settings.getWorkerSettings().buildersUseSubstitutes ? Substitute : NoSubstitute;
 
+    /* An `ssh-ng` machine's connection streams belong to this coroutine
+       and must be used from its thread only (see `AsyncFdSource`). The
+       upload stays on this thread because `RemoteStore::addMultipleToStore`
+       sends the paths one after another on the calling thread, for a
+       daemon of protocol 1.32 or newer; older daemons get the base
+       class's threaded implementation, which would write to the
+       connection from pool threads. Copy one path at a time for those. */
     {
         Activity act(*logger, lvlTalkative, actUnknown, fmt("copying dependencies to '%s'", storeUri));
-        copyPaths(store, *sshStore, req.inputPaths, NoRepair, NoCheckSigs, substitute);
+        auto * remote = dynamic_cast<RemoteStore *>(&*sshStore);
+        if (remote
+            && WorkerProto::Version::Number::fromWire(remote->getProtocol()) < WorkerProto::Version::Number{1, 32})
+            for (auto & path : store.topoSortPaths(req.inputPaths) | std::views::reverse)
+                copyStorePath(store, *sshStore, path, NoRepair, NoCheckSigs);
+        else
+            copyPaths(store, *sshStore, req.inputPaths, NoRepair, NoCheckSigs, substitute);
     }
 
     uploadLock.close();
@@ -215,7 +237,15 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
             for (auto & path : missingPaths)
                 localStore->locksHeld.insert(store.printStorePath(path)); /* FIXME: ugly */
 
-        copyPaths(*sshStore, store, missingPaths, NoRepair, NoCheckSigs, NoSubstitute);
+        /* Not `copyPaths`: it hands the paths to `store.addMultipleToStore`,
+           which on a local store runs them through a `ThreadPool` whose
+           extra threads would read from the machine's connection, an
+           `AsyncFdSource` tied to this coroutine and its thread (the pool
+           grows as soon as two paths are pending, so any derivation with
+           two missing outputs). One path at a time, references first, as
+           `copyPaths` orders them. */
+        for (auto & path : sshStore->topoSortPaths(missingPaths) | std::views::reverse)
+            copyStorePath(*sshStore, store, path, NoRepair, NoCheckSigs);
     }
 
     // XXX: Should be done as part of `copyPaths`
