@@ -158,7 +158,8 @@ static OsStringMap createSSHEnv()
     return env;
 }
 
-std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs)
+std::unique_ptr<SSHMaster::Connection>
+SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool awaitStarted)
 {
     std::filesystem::path socketPath = startMaster();
 
@@ -222,15 +223,23 @@ std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(OsStrings && comm
     // Wait for the SSH connection to be established,
     // So that we don't overwrite the password prompt with our progress bar.
     if (!fakeSSH && !useMaster && !isMasterRunning()) {
-        std::string reply;
-        try {
-            reply = readLine(out.readSide.get());
-        } catch (EndOfFile & e) {
-        }
+        if (!awaitStarted)
+            /* The caller reads it, without blocking its thread. The
+               logger stays suspended only until we return, so a
+               password prompt may still collide with the progress
+               bar; the caller knows that. */
+            conn->startedLinePending = true;
+        else {
+            std::string reply;
+            try {
+                reply = readLine(out.readSide.get());
+            } catch (EndOfFile & e) {
+            }
 
-        if (reply != "started") {
-            printTalkative("SSH stdout first line: %s", reply);
-            throw Error("failed to start SSH connection to '%s'", authority.host);
+            if (reply != "started") {
+                printTalkative("SSH stdout first line: %s", reply);
+                throw Error("failed to start SSH connection to '%s'", authority.host);
+            }
         }
     }
 

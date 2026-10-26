@@ -65,6 +65,14 @@ public:
         AutoCloseFD out, in;
 
         /**
+         * Set when `startCommand` was told not to wait for ssh's
+         * `started` line: the caller must read that line from `out`
+         * before anything else, and fail the connection if it is not
+         * there.
+         */
+        bool startedLinePending = false;
+
+        /**
          * Try to set the buffer size in both directions to the
          * designated amount, if possible. If not possible, does
          * nothing.
@@ -83,8 +91,14 @@ public:
      * @param extraSshArgs Extra arguments to pass to SSH (not the command to
      * execute). Will not be used when "fake SSHing" to the local
      * machine.
+     *
+     * @param awaitStarted Whether to block until ssh reports the
+     * connection established. A caller that must not block its thread
+     * (one running inside a coroutine) passes `false` and reads the
+     * line itself; see `Connection::startedLinePending`.
      */
-    std::unique_ptr<Connection> startCommand(OsStrings && command, OsStrings && extraSshArgs = {});
+    std::unique_ptr<Connection>
+    startCommand(OsStrings && command, OsStrings && extraSshArgs = {}, bool awaitStarted = true);
 };
 
 } // namespace nix

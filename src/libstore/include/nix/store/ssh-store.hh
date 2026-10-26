@@ -5,6 +5,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/store/local-fs-store.hh"
 #include "nix/store/remote-store.hh"
+#include "nix/util/serialise-async.hh"
 
 namespace nix {
 
@@ -41,6 +42,20 @@ public:
     static std::string doc();
 
     ref<Store> openStore() const override;
+
+    /**
+     * Open the store for use from inside the stackful coroutine that
+     * `yield` belongs to, and only from there. Its connection reads and
+     * writes through `AsyncFdSource`/`AsyncFdSink` on `ctx`: an
+     * operation that would block suspends the coroutine, and `ctx`
+     * resumes it when the descriptor is ready. The rest of
+     * `RemoteStore` is unchanged; it simply finds that its synchronous
+     * `Source`/`Sink` calls no longer block the thread.
+     *
+     * The in-process remote builder (`DerivationBuildingGoal::buildRemotely`)
+     * opens the machines it builds on this way.
+     */
+    ref<Store> openStoreAsync(asio::io_context & ctx, asio::yield_context yield) const;
 
     StoreReference getReference() const override;
 };

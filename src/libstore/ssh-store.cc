@@ -51,10 +51,24 @@ public:
 
     ref<const Config> config;
 
-    SSHStore(ref<const Config> config)
+    /**
+     * Set when the store is driven from inside a stackful coroutine;
+     * see `SSHStoreConfig::openStoreAsync`. Connections then suspend
+     * that coroutine instead of blocking the thread.
+     */
+    struct AsyncContext
+    {
+        asio::io_context & ctx;
+        asio::yield_context yield;
+    };
+
+    std::optional<AsyncContext> async;
+
+    SSHStore(ref<const Config> config, std::optional<AsyncContext> async = std::nullopt)
         : Store{*config}
         , RemoteStore{*config}
         , config{config}
+        , async(std::move(async))
         , master(config->createSSHMaster(
               // Use SSH master only if using more than 1 connection.
               connections->capacity() > 1))
@@ -69,6 +83,25 @@ public:
 
 protected:
 
+    /**
+     * `AsyncFdSource` for the daemon's replies. `AsyncFdSource` reports
+     * end of file as a zero-length read, which `Source::operator()`
+     * would spin on; the protocol code expects `EndOfFile`, as
+     * `FdSource` throws.
+     */
+    struct AsyncDaemonSource : AsyncFdSource
+    {
+        using AsyncFdSource::AsyncFdSource;
+
+        size_t readUnbuffered(char * data, size_t len) override
+        {
+            auto n = AsyncFdSource::readUnbuffered(data, len);
+            if (n == 0)
+                throw EndOfFile("Nix daemon disconnected unexpectedly (maybe it crashed?)");
+            return n;
+        }
+    };
+
     struct Connection : RemoteStore::Connection
     {
     private:
@@ -76,6 +109,13 @@ protected:
 
     public:
         std::unique_ptr<SSHMaster::Connection> sshConn;
+
+        /**
+         * Set when the streams are asynchronous. The pipes then belong
+         * to the streams, not to `sshConn`, and the writing side is
+         * closed through here.
+         */
+        AsyncFdSink * asyncSink = nullptr;
 
         /**
          * Blocking streams on the pipes to the ssh child.
@@ -87,19 +127,45 @@ protected:
         {
         }
 
+        /**
+         * Streams that suspend the coroutine `async` belongs to. They
+         * take the pipes over from `sshConn`.
+         */
+        Connection(std::unique_ptr<SSHMaster::Connection> sshConn, const AsyncContext & async)
+            : RemoteStore::Connection(
+                  std::make_unique<AsyncFdSink>(async.ctx, async.yield, std::move(sshConn->in)),
+                  std::make_unique<AsyncDaemonSource>(async.ctx, async.yield, std::move(sshConn->out)))
+            , sshConn(std::move(sshConn))
+            , asyncSink(static_cast<AsyncFdSink *>(ConnectionStreams::to.get()))
+        {
+        }
+
+        ~Connection()
+        {
+            /* `~BasicClientConnection` flushes `to`. An asynchronous
+               flush would switch contexts during destruction, which
+               may be stack unwinding after a cancelled operation; drop
+               the (normally empty) buffer instead. */
+            if (asyncSink)
+                asyncSink->close();
+        }
+
         Descriptor fromFd() const override
         {
-            return sshConn->out.get();
+            return asyncSink ? INVALID_DESCRIPTOR : sshConn->out.get();
         }
 
         Descriptor toFd() const override
         {
-            return sshConn->in.get();
+            return asyncSink ? INVALID_DESCRIPTOR : sshConn->in.get();
         }
 
         void closeWrite() override
         {
-            sshConn->in.close();
+            if (asyncSink)
+                asyncSink->close();
+            else
+                sshConn->in.close();
         }
     };
 
@@ -236,6 +302,11 @@ ref<Store> SSHStore::Config::openStore() const
     return make_ref<SSHStore>(ref{shared_from_this()});
 }
 
+ref<Store> SSHStore::Config::openStoreAsync(asio::io_context & ctx, asio::yield_context yield) const
+{
+    return make_ref<SSHStore>(ref{shared_from_this()}, SSHStore::AsyncContext{ctx, yield});
+}
+
 ref<Store> MountedSSHStore::Config::openStore() const
 {
     return make_ref<MountedSSHStore>(ref{std::dynamic_pointer_cast<const MountedSSHStore::Config>(shared_from_this())});
@@ -250,7 +321,28 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
         command.push_back(config->remoteStore.get());
     }
     command.insert(command.end(), extraRemoteProgramArgs.begin(), extraRemoteProgramArgs.end());
-    return make_ref<Connection>(master.startCommand(toOsStrings(std::move(command))));
+
+    if (!async)
+        return make_ref<Connection>(master.startCommand(toOsStrings(std::move(command))));
+
+    /* Inside a coroutine: do not wait for ssh's `started` line in
+       `startCommand`, which would block the thread; read it through
+       the asynchronous source instead, where it suspends. */
+    auto sshConn = master.startCommand(toOsStrings(std::move(command)), {}, /*awaitStarted=*/false);
+    bool startedLinePending = sshConn->startedLinePending;
+    auto conn = make_ref<Connection>(std::move(sshConn), *async);
+    if (startedLinePending) {
+        std::string reply;
+        try {
+            reply = conn->from.readLine(/*eofOk=*/true);
+        } catch (EndOfFile &) {
+        }
+        if (reply != "started") {
+            printTalkative("SSH stdout first line: %s", reply);
+            throw Error("failed to start SSH connection to '%s'", config->getHumanReadableURI());
+        }
+    }
+    return conn;
 }
 
 static RegisterStoreImplementation<SSHStore::Config> regSSHStore;
