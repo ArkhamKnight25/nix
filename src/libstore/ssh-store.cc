@@ -87,25 +87,6 @@ public:
 
 protected:
 
-    /**
-     * `AsyncFdSource` for the daemon's replies. `AsyncFdSource` reports
-     * end of file as a zero-length read, which `Source::operator()`
-     * would spin on; the protocol code expects `EndOfFile`, as
-     * `FdSource` throws.
-     */
-    struct AsyncDaemonSource : AsyncFdSource
-    {
-        using AsyncFdSource::AsyncFdSource;
-
-        size_t readUnbuffered(char * data, size_t len) override
-        {
-            auto n = AsyncFdSource::readUnbuffered(data, len);
-            if (n == 0)
-                throw EndOfFile("Nix daemon disconnected unexpectedly (maybe it crashed?)");
-            return n;
-        }
-    };
-
     struct Connection : RemoteStore::Connection
     {
     private:
@@ -132,13 +113,24 @@ protected:
         }
 
         /**
+         * The daemon's replies, with the message `RemoteStore::initConnection`
+         * gives a blocking `FdSource`; it cannot tell this stream apart.
+         */
+        static std::unique_ptr<AsyncFdSource> daemonSource(const AsyncContext & async, AutoCloseFD fd)
+        {
+            auto source = std::make_unique<AsyncFdSource>(async.ctx, async.yield, std::move(fd));
+            source->endOfFileError = "Nix daemon disconnected unexpectedly (maybe it crashed?)";
+            return source;
+        }
+
+        /**
          * Streams that suspend the coroutine `async` belongs to. They
          * take the pipes over from `sshConn`.
          */
         Connection(std::unique_ptr<SSHMaster::Connection> sshConn, const AsyncContext & async)
             : RemoteStore::Connection(
                   std::make_unique<AsyncFdSink>(async.ctx, async.yield, std::move(sshConn->in)),
-                  std::make_unique<AsyncDaemonSource>(async.ctx, async.yield, std::move(sshConn->out)))
+                  daemonSource(async, std::move(sshConn->out)))
             , sshConn(std::move(sshConn))
             , asyncSink(static_cast<AsyncFdSink *>(ConnectionStreams::to.get()))
         {

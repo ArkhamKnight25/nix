@@ -29,6 +29,11 @@ using NativeAsyncStreamDescriptor =
  *
  * When the read would block, the caller is suspended. It's important to
  * ensure that this object is not migrated between coroutines.
+ *
+ * End of file is reported as `FdSource` reports it: `readUnbuffered`
+ * throws `EndOfFile` carrying `endOfFileError`. `Source::operator()`
+ * keeps reading until it has all the bytes it was asked for, so a
+ * zero-length read would make it spin; `readLine` accepts either.
  */
 class AsyncFdSource : public BufferedSource
 {
@@ -36,6 +41,12 @@ class AsyncFdSource : public BufferedSource
     asio::yield_context yield;
 
 public:
+    /**
+     * The message of the `EndOfFile` thrown when the descriptor is
+     * exhausted; see `FdSource::endOfFileError`.
+     */
+    BackedStringView endOfFileError{"unexpected end-of-file"};
+
     AsyncFdSource(asio::io_context & ctx, asio::yield_context yield, AutoCloseFD fd)
         : fd(ctx, fd.release())
         , yield(std::move(yield))
@@ -46,8 +57,8 @@ public:
     {
         boost::system::error_code ec;
         auto res = fd.async_read_some(asio::mutable_buffer(data, len), yield[ec]);
-        if (ec == boost::asio::error::eof)
-            return 0;
+        if (ec == boost::asio::error::eof || (!ec && res == 0))
+            throw EndOfFile(std::string(*endOfFileError));
         else if (ec)
             throw SystemError(ec, "read of %1% bytes", len);
         return res;
