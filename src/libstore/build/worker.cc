@@ -47,6 +47,17 @@ Worker::Worker(Store & store, Store & evalStore)
     nrLocalBuilds = 0;
     nrSubstitutions = 0;
     lastWokenUp = steady_time_point::min();
+
+    /* `run` reaches `checkInterrupt()` only between waits. An interrupt
+       reaches this thread as `NIX_SIG_MULTI_INT` from the signal handler
+       thread (`ReceiveInterrupts`), which used to make `poll()` return
+       `EINTR` and `waitForInput` fall through. asio restarts its wait on
+       `EINTR`, so make the wait return ourselves. The callback runs on
+       the signal handler thread, hence the weak pointer. */
+    interruptCallback = createInterruptCallback([waker = std::weak_ptr<Waker>(wakerState.get_ptr())]() {
+        if (auto w = waker.lock())
+            w->wake();
+    });
 }
 
 Worker::~Worker()
@@ -649,6 +660,11 @@ void Worker::Waker::wakeAll(Worker & worker)
 void Worker::Waker::enqueue(WeakGoalPtr goal)
 {
     wakeupQueue_.lock()->push(goal);
+    wake();
+}
+
+void Worker::Waker::wake()
+{
 #ifdef _WIN32
     PostQueuedCompletionStatus(
         ioport, /*dwNumberOfBytesTransferred=*/0, /*dwCompletionKey=*/0, /*lpOverlapped=*/nullptr);

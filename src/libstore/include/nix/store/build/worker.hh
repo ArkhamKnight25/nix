@@ -217,12 +217,24 @@ private:
 
     public:
         void enqueue(WeakGoalPtr goal);
+
+        /**
+         * Make `waitForInput` return without a goal to wake; the
+         * worker then reaches `checkInterrupt()`. Safe from any thread.
+         */
+        void wake();
     };
 
     /**
      * This is behind a ref, so that other threads can take a weak_ptr to it.
      */
     ref<Waker> wakerState;
+
+    /**
+     * Wakes the worker on an interrupt; see the constructor. Declared
+     * after `wakerState` so that it is destroyed first.
+     */
+    std::unique_ptr<InterruptCallback> interruptCallback;
 
 public:
 
