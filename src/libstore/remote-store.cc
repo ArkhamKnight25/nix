@@ -52,7 +52,8 @@ RemoteStore::RemoteStore(const Config & config)
                       throw;
                   }
                   /* Track the connection FD for shutdownConnections() */
-                  connectionFds.lock()->insert(conn->from.fd);
+                  if (auto fd = conn->fromFd(); fd != INVALID_DESCRIPTOR)
+                      connectionFds.lock()->insert(fd);
                   return conn;
               },
               [this](const ref<Connection> & r) {
@@ -88,7 +89,9 @@ void RemoteStore::initConnection(Connection & conn)
 {
     /* Send the magic greeting, check for the reply. */
     try {
-        conn.from.endOfFileError = "Nix daemon disconnected unexpectedly (maybe it crashed?)";
+        /* Other stream types report EOF their own way; see `SSHStore`. */
+        if (auto * fdSource = dynamic_cast<FdSource *>(&conn.from))
+            fdSource->endOfFileError = "Nix daemon disconnected unexpectedly (maybe it crashed?)";
 
         StringSink saved;
         TeeSource tee(conn.from, saved);

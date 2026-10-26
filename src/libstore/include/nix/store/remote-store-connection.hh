@@ -25,6 +25,37 @@ private:
 
 public:
     /**
+     * The streams that `to` and `from` refer to. Any buffered pair will
+     * do: `FdSink`/`FdSource` for a connection driven by blocking I/O,
+     * `AsyncFdSink`/`AsyncFdSource` for one driven from inside a
+     * stackful coroutine (see `SSHStore`). They are passed in rather
+     * than constructed here because the base class binds its references
+     * before our members exist.
+     */
+    std::unique_ptr<BufferedSink> toOwned;
+    std::unique_ptr<BufferedSource> fromOwned;
+
+    Connection(std::unique_ptr<BufferedSink> to, std::unique_ptr<BufferedSource> from)
+        : BasicClientConnection(*to, *from)
+        , toOwned(std::move(to))
+        , fromOwned(std::move(from))
+    {
+    }
+
+    /**
+     * The descriptor behind `from`, or `INVALID_DESCRIPTOR` when the
+     * stream does not expose one. `shutdownConnections()` uses it to
+     * break a blocking read from another thread, and `nix-daemon
+     * --stdio` to forward the raw connection.
+     */
+    virtual Descriptor fromFd() const = 0;
+
+    /**
+     * The descriptor behind `to`; see `fromFd`.
+     */
+    virtual Descriptor toFd() const = 0;
+
+    /**
      * Time this connection was established.
      */
     std::chrono::time_point<std::chrono::steady_clock> startTime;
