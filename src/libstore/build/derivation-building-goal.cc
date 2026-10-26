@@ -703,7 +703,8 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::buildWithHook(
     mcRunningBuilds = std::make_unique<MaintainCount<uint64_t>>(worker.runningBuilds);
     worker.updateProgress();
 
-    std::string currentHookLine;
+    /* What `tryBuildHook` read past the machine name, if anything. */
+    std::string currentHookLine = std::move(hook->partialLine);
     uint64_t logSize = 0;
 
     while (true) {
@@ -1309,7 +1310,7 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
 
     std::optional<std::string> reply;
     std::optional<std::string> machineName;
-    std::string line;
+    std::string line = std::move(hook->partialLine);
     bool eof = false;
 
     auto done = [&]() { return eof || (reply && (*reply != "accept" || machineName)); };
@@ -1337,8 +1338,15 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
             eof = true;
     }
 
-    /* The hook writes nothing more until it gets our next message, so
-       no event can be pending here. */
+    /* No event can be pending here. `MuxablePipePollState::iterate`
+       reads each descriptor once per round of `waitForInput`, up to
+       4 KiB, and reports EOF only on a later round; the one event it
+       queues wakes us, and we run before the next round. Whatever
+       arrived in the same read after the machine name has been
+       handled line by line above; a line still without its newline
+       goes back to the hook for `buildWithHook` to finish. A second
+       pending event would trip the assertion in `Suspend`'s awaiter. */
+    hook->partialLine = std::move(line);
     worker.childTerminated(this);
 
     if (eof) {

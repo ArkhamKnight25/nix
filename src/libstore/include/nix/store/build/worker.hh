@@ -63,7 +63,7 @@ struct Child
      * because the child may be unregistered from the goal's destructor,
      * where that virtual is no longer callable.
      */
-    JobCategory jobCategory;
+    JobCategory jobCategory{};
     /**
      * Time we last got output on stdout/stderr
      */
@@ -148,6 +148,14 @@ private:
      * on its way out through the `Finally` in `tryBuildHook` that
      * calls `releaseHook`. There is no state in which the hook is busy
      * and nothing will release it.
+     *
+     * Order: `releaseHook` wakes every waiter, and `Worker::run` works
+     * the awake goals in `CompareGoalPtrs` order, so the hook goes to
+     * the waiter with the smallest key, not to the one that waited
+     * longest; the others go back to waiting. Waking one would be
+     * cheaper and fair, but the woken goal may no longer want the
+     * hook (`decline-permanently` was heard meanwhile, or it is being
+     * destroyed) and would then never release it for the rest.
      */
     WeakGoals wantingHook;
 

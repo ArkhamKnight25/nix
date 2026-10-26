@@ -53,6 +53,15 @@ struct HookInstance
     std::map<ActivityId, Activity> activities;
 
     /**
+     * The start of a line from `fromHook` that has arrived without its
+     * newline yet. The reader of the moment (`tryBuildHook`, then
+     * `buildWithHook`) takes it up and leaves the next one here, so a
+     * line cut by a read boundary is seen whole by whoever reads next,
+     * as the blocking `readLine` saw it.
+     */
+    std::string partialLine;
+
+    /**
      * Callback to run when the hook process is killed in the destructor.
      * Used to call `Worker::childTerminated`.
      */
