@@ -71,6 +71,20 @@ public:
        destruction, because potentially switching contexts during stack
        unwinding is very sketchy. */
 
+    /**
+     * Drop whatever is still buffered and close the descriptor, without
+     * a context switch. For the writing half of a bidirectional
+     * connection this is the half-close that tells the peer we are
+     * done; in a destructor it is the only safe way to let go of the
+     * descriptor, since flushing could suspend during unwinding.
+     */
+    void close()
+    {
+        bufPos = 0;
+        if (fd.is_open())
+            fd.close();
+    }
+
     void writeUnbuffered(std::string_view data) override
     {
         while (!data.empty()) {
