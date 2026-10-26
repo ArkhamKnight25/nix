@@ -17,12 +17,19 @@ namespace nix {
  * while it is talked to. `mounted-ssh-ng` has its own store class and
  * is left to the blocking path too.
  */
-static ref<Store> openMachineStore(const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
+static ref<Store> openMachineStore(const RemoteMachineBuildRequest & req, const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
 {
-    auto config = resolveStoreConfig(machine.completeStoreReference());
+    auto storeUri = machine.completeStoreReference();
+    /* The hook had the legacy `ssh://` store write the build log to its
+       descriptor 4, the pipe to the hook's parent. Inside the worker
+       descriptor 4 is whatever it happens to be; those logs are not
+       collected yet. */
+    storeUri.params.erase("log-fd");
+
+    auto config = resolveStoreConfig(std::move(storeUri));
     if (!config.dynamic_pointer_cast<const MountedSSHStoreConfig>())
         if (auto sshConfig = config.dynamic_pointer_cast<const SSHStoreConfig>())
-            return sshConfig->openStoreAsync(ctx, yield);
+            return sshConfig->openStoreAsync(ctx, yield, req.messageLogger);
     warn(
         "remote builder '%s' is not an ssh-ng store; talking to it will hold up other builds",
         machine.storeUri.render());
@@ -73,7 +80,7 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         storeUri = acquired.machine->storeUri.render();
         try {
             Activity act(*logger, lvlTalkative, actUnknown, fmt("connecting to '%s'", storeUri));
-            sshStore = openMachineStore(*acquired.machine, ctx, yield);
+            sshStore = openMachineStore(req, *acquired.machine, ctx, yield);
             sshStore->connect();
             break;
         } catch (Interrupted &) {

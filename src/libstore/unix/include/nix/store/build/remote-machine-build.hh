@@ -39,6 +39,13 @@ struct RemoteMachineBuildRequest
      * The outputs to copy back.
      */
     StringSet wantedOutputs;
+
+    /**
+     * Where the machine's messages go, if not to the process's
+     * `logger`; see `BasicClientConnection::messageLogger`. Shared, so
+     * that it outlives the coroutine however that ends.
+     */
+    std::shared_ptr<Logger> messageLogger;
 };
 
 /**

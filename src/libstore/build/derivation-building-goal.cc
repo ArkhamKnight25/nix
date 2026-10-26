@@ -1374,6 +1374,124 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
     return {rpAccept, std::get<AcquiredMachine>(std::move(selection))};
 }
 
+/**
+ * Sees the machine's messages pass on their way to the process's logger,
+ * as `buildWithHook` saw the hook's. The build's own lines arrive as
+ * results of the machine's build activity, exactly as from any `ssh-ng`
+ * store; they also go into the log file that `nix log` reads, phases
+ * included. Everything else is forwarded untouched.
+ */
+struct RemoteBuildLogger : Logger
+{
+    Logger & next;
+    LogFile logFile;
+
+    RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath)
+        : next(next)
+        , logFile(store, drvPath, settings.getLogFileSettings())
+    {
+    }
+
+    void stop() override
+    {
+        next.stop();
+    }
+
+    void pause() override
+    {
+        next.pause();
+    }
+
+    void resume() override
+    {
+        next.resume();
+    }
+
+    bool isVerbose() override
+    {
+        return next.isVerbose();
+    }
+
+    void log(Verbosity lvl, std::string_view s) noexcept override
+    {
+        next.log(lvl, s);
+    }
+
+    void logEI(const ErrorInfo & ei) noexcept override
+    {
+        next.logEI(ei);
+    }
+
+    void warn(const std::string & msg) noexcept override
+    {
+        next.warn(msg);
+    }
+
+    void startActivity(
+        ActivityId act,
+        Verbosity lvl,
+        ActivityType type,
+        const std::string & s,
+        std::span<const Field> fields,
+        ActivityId parent) noexcept override
+    {
+        next.startActivity(act, lvl, type, s, fields, parent);
+    }
+
+    void stopActivity(ActivityId act) noexcept override
+    {
+        next.stopActivity(act);
+    }
+
+    void result(ActivityId act, ResultType type, std::span<const Field> fields) noexcept override
+    {
+        next.result(act, type, fields);
+
+        if (!logFile.sink || fields.empty())
+            return;
+        auto * s = std::get_if<std::string>(&fields[0]);
+        if (!s)
+            return;
+        try {
+            if (type == resBuildLogLine)
+                (*logFile.sink)(*s + "\n");
+            else if (type == resSetPhase) {
+                // nixpkgs' stdenv produces lines in the log to signal
+                // phase changes.
+                // We want to get the same lines in case of remote builds.
+                // The format is:
+                //   @nix { "action": "setPhase", "phase": "$curPhase" }
+                const auto logLine = nlohmann::json::object({{"action", "setPhase"}, {"phase", *s}});
+                (*logFile.sink)(
+                    "@nix " + logLine.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + "\n");
+            }
+        } catch (...) {
+            /* Logging must not throw; the log file is a convenience. */
+            ignoreExceptionInDestructor();
+        }
+    }
+
+    void result(ActivityId act, ResultType type, const nlohmann::json & json) noexcept override
+    {
+        next.result(act, type, json);
+    }
+
+    void writeToStdout(std::string_view s) override
+    {
+        next.writeToStdout(s);
+    }
+
+    std::optional<char> ask(std::string_view s) override
+    {
+        return next.ask(s);
+    }
+
+    void setPrintBuildLogs(bool printBuildLogs) override
+    {
+        next.setPrintBuildLogs(printBuildLogs);
+    }
+};
+
 Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::buildRemotely(
     AcquiredMachine machine,
     const DerivationOptions<StorePath> & drvOptions,
@@ -1392,6 +1510,10 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         wantedOutputs.insert(outputName);
     }
 
+    /* Opens the log file. Closing it is left to whoever drops the last
+       reference: us below, or the coroutine if it outlives us. */
+    auto remoteLogger = std::make_shared<RemoteBuildLogger>(*logger, worker.store, drvPath);
+
     auto request = std::make_shared<RemoteMachineBuildRequest>(RemoteMachineBuildRequest{
         .drvPath = drvPath,
         .drv = drv,
@@ -1399,6 +1521,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         .requiredFeatures = drvOptions.getRequiredSystemFeatures(*drv),
         .inputPaths = inputPaths,
         .wantedOutputs = std::move(wantedOutputs),
+        .messageLogger = remoteLogger,
     });
 
     buildResult.startTime = time(nullptr); // inexact
@@ -1410,10 +1533,11 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
             worker.store.printStorePath(drvPath));
     msg += fmt(" on '%s'", machineName);
 
-    /* The machine's log lines reach `logger` straight from the
-       connection (`processStderr`); unlike `buildWithHook` we do not
-       see them pass, so there is no log file and no tail for the error
-       message yet. */
+    /* The machine's log lines reach `logger` through `remoteLogger`,
+       which writes the log file. `buildWithHook` also kept a tail for
+       the error message and enforced `max-log-size`; the machine's own
+       failure message carries its tail, and the size limit is not
+       enforced here yet. */
     Activity act(
         *logger,
         lvlInfo,
@@ -1477,6 +1601,9 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         co_await waitUntilWoken();
 
     trace("remote build done");
+
+    /* Close the log file. */
+    remoteLogger.reset();
 
     buildResult.timesBuilt++;
     buildResult.stopTime = time(nullptr);
