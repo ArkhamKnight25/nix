@@ -500,8 +500,11 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
     auto tryHookLoop = [&]() -> Goal::Co<std::optional<Result>> {
         /* Run the accepted build where it was accepted: on the hook, or
            on the machine the worker reserved. `std::nullopt` means that
-           machine (and every other) turned out to be unreachable and we
-           should build locally after all. */
+           machine (and every other it moved on to) turned out to be
+           unreachable, or every fitting one was full; the hook would
+           have replied `decline` or `postpone` at that point, so the
+           caller asks `tryRemoteBuilder` again, which tells those two
+           apart, rather than build locally straight away. */
         auto buildRemote = [&](RemoteReply && reply, PathLocks outputLocks) -> Goal::Co<std::optional<Result>> {
 #ifndef _WIN32
             if (reply.machine)
@@ -523,7 +526,11 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
             switch (reply.reply) {
             case rpAccept:
                 /* Yes, a machine will do it. Wait until it is done. */
-                co_return co_await buildRemote(std::move(reply), std::move(outputLocks));
+                if (auto result = co_await buildRemote(std::move(reply), std::move(outputLocks)))
+                    co_return result;
+                /* No machine took it after all; ask again below, after
+                   a while, as after a `postpone`. */
+                break;
             case rpDecline:
                 // We should do it ourselves.
                 co_return std::nullopt;
@@ -567,18 +574,18 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
                     co_return std::nullopt;
                 }
 
-                break;
+                if (auto result = co_await buildRemote(std::move(reply), std::move(outputLocks)))
+                    co_return result;
+                /* No machine took it after all; `buildRemote` released
+                   the locks. Ask again. */
             }
         }
 
-        if (valid) {
-            co_return Result{BuildResult::Success{
-                .status = BuildResult::Success::AlreadyValid,
-                .builtOutputs = checkPathValidity(initialOutputs).second,
-            }};
-        } else {
-            co_return co_await buildRemote(std::move(reply), std::move(outputLocks));
-        }
+        assert(valid);
+        co_return Result{BuildResult::Success{
+            .status = BuildResult::Success::AlreadyValid,
+            .builtOutputs = checkPathValidity(initialOutputs).second,
+        }};
     };
 
     auto tryBuildLocally = [&]() -> Goal::Co<std::optional<LocalBuildOutcome>> {
