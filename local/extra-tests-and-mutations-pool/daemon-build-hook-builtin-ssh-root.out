@@ -1,0 +1,7 @@
+1/1 main - nix-functional-tests:build-hook-builtin-ssh-root SKIP             0.58s   exit status 77
+
+Ok:                0   
+Fail:              0   
+Skipped:           1   
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt

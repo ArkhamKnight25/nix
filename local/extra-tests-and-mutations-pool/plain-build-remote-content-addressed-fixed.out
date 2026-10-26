@@ -1,0 +1,6 @@
+1/1 main - nix-functional-tests:build-remote-content-addressed-fixed OK               2.22s
+
+Ok:                1   
+Fail:              0   
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt

@@ -1,0 +1,246 @@
+  1/240 main - nix-functional-tests:bash-profile                            OK              -0.90s
+  2/240 main - nix-functional-tests:add-scanning                            SKIP            -0.71s   exit status 77
+  3/240 main - nix-functional-tests:absolute-path-literals                  OK              -0.56s
+  4/240 main - nix-functional-tests:binary-cache                            SKIP             0.77s   exit status 77
+  5/240 main - nix-functional-tests:build-cores                             OK               1.45s
+  6/240 main - nix-functional-tests:build-hook-builtin                      SKIP             0.96s   exit status 77
+  7/240 main - nix-functional-tests:build-dry                               OK               3.52s
+  8/240 main - nix-functional-tests:add                                     OK               3.48s
+  9/240 main - nix-functional-tests:build-hook-builtin-ssh-root             SKIP             0.67s   exit status 77
+ 10/240 main - nix-functional-tests:build-delete                            OK               5.13s
+ 11/240 main - nix-functional-tests:build-hook-builtin-error                OK               1.06s
+ 12/240 main - nix-functional-tests:build-hook-configured                   OK               1.10s
+ 13/240 main - nix-functional-tests:build-hook-builtin-interrupt            OK               2.76s
+ 14/240 main - nix-functional-tests:build-hook-async                        SKIP             0.91s   exit status 77
+ 15/240 main - nix-functional-tests:build-hook-interrupt-reply              OK               2.43s
+ 16/240 main - nix-functional-tests:binary-cache-compression                OK               9.34s
+ 17/240 main - nix-functional-tests:build-hook-postpone                     SKIP             0.74s   exit status 77
+ 18/240 main - nix-functional-tests:build-hook-pool                         SKIP             0.75s   exit status 77
+ 19/240 main - nix-functional-tests:binary-cache-build-remote               OK              10.29s
+ 20/240 main - nix-functional-tests:build-hook-interrupt-queued             OK               4.39s
+ 21/240 main - nix-functional-tests:build-remote-content-addressed-fixed    OK               3.10s
+ 22/240 main - nix-functional-tests:build-remote-content-addressed-floating OK               3.19s
+ 23/240 main - nix-functional-tests:build-remote-input-addressed            OK               5.50s
+ 24/240 main - nix-functional-tests:build-hook-program                      OK              12.46s
+ 25/240 main - nix-functional-tests:build-remote-trustless-should-fail-0    OK               6.96s
+ 26/240 main - nix-functional-tests:build-remote-with-mounted-ssh-ng        OK               1.25s
+ 27/240 main - nix-functional-tests:build-remote-trustless-should-pass-0    OK               6.97s
+ 28/240 main - nix-functional-tests:build-remote-trustless-should-pass-1    OK               7.12s
+ 29/240 main - nix-functional-tests:ca-old-daemon                           OK               1.39s
+ 30/240 main - nix-functional-tests:characterisation-test-infra             OK               0.74s
+ 31/240 main - nix-functional-tests:build-remote-trustless-should-pass-2    OK               7.18s
+ 32/240 main - nix-functional-tests:check                                   SKIP             0.66s   exit status 77
+ 33/240 main - nix-functional-tests:check-reqs                              OK               2.81s
+ 34/240 main - nix-functional-tests:build-remote-trustless-should-pass-3    OK               7.39s
+ 35/240 main - nix-functional-tests:build-hook-builtin-ssh                  OK              24.35s
+ 36/240 main - nix-functional-tests:check-refs                              OK               6.17s
+ 37/240 main - nix-functional-tests:chroot-store                            OK               4.02s
+ 38/240 main - nix-functional-tests:compression-levels                      OK               1.62s
+ 39/240 main - nix-functional-tests:build                                   OK               9.65s
+ 40/240 main - nix-functional-tests:completions                             OK               4.53s
+ 41/240 main - nix-functional-tests:db-migration                            OK               2.00s
+ 42/240 main - nix-functional-tests:delete-no-keep                          OK               2.53s
+ 43/240 main - nix-functional-tests:derivation-advanced-attributes          OK               0.98s
+ 44/240 main - nix-functional-tests:config                                  OK               3.60s
+ 45/240 main - nix-functional-tests:dump-db                                 SKIP             0.75s   exit status 77
+ 46/240 main - nix-functional-tests:eval-store                              SKIP             0.74s   exit status 77
+ 47/240 main - nix-functional-tests:derivation-json                         OK              -0.01s
+ 48/240 main - nix-functional-tests:dependencies                            OK               2.69s
+ 49/240 main - nix-functional-tests:external-builders                       SKIP             0.80s   exit status 77
+ 50/240 main - nix-functional-tests:export                                  OK               3.06s
+ 51/240 main - nix-functional-tests:extra-sandbox-profile                   SKIP             0.76s   exit status 77
+ 52/240 main - nix-functional-tests:cli-characterisation                    OK               9.26s
+ 53/240 main - nix-functional-tests:experimental-features                   OK               4.25s
+ 54/240 main - nix-functional-tests:eval                                    OK               4.98s
+ 55/240 main - nix-functional-tests:export-graph                            OK               4.81s
+ 56/240 main - nix-functional-tests:fetchClosure                            OK               4.01s
+ 57/240 main - nix-functional-tests:fetchGitShallow                         OK               3.14s
+ 58/240 main - nix-functional-tests:fetchGitRev                             OK               6.17s
+ 59/240 main - nix-functional-tests:fetchGitVerification                    OK               3.47s
+ 60/240 main - nix-functional-tests:fetchPath                               OK               1.17s
+ 61/240 main - nix-functional-tests:fetchTree-file                          OK               2.57s
+ 62/240 main - nix-functional-tests:filter-source                           OK               1.33s
+ 63/240 main - nix-functional-tests:fixed-slow-vs-bad                       OK               1.42s
+ 64/240 main - nix-functional-tests:fetchurl                                OK               5.36s
+ 65/240 main - nix-functional-tests:fetchGitSubmodules                      OK              10.54s
+ 66/240 main - nix-functional-tests:fetchGitRefs                            OK              12.76s
+ 67/240 main - nix-functional-tests:fetchGit                                OK              16.13s
+ 68/240 main - nix-functional-tests:flamegraph-profiler                     OK               3.31s
+ 69/240 main - nix-functional-tests:gc-auto                                 SKIP             0.69s   exit status 77
+ 70/240 main - nix-functional-tests:function-trace                          OK               1.97s
+ 71/240 main - nix-functional-tests:gc-non-blocking                         SKIP             0.70s   exit status 77
+ 72/240 main - nix-functional-tests:formatter                               OK               4.92s
+ 73/240 main - nix-functional-tests:gc-concurrent                           OK               2.95s
+ 74/240 main - nix-functional-tests:gc-runtime                              OK               3.81s
+ 75/240 main - nix-functional-tests:gc                                      OK               3.54s
+ 76/240 main - nix-functional-tests:gc-closure                              OK               6.48s
+ 77/240 main - nix-functional-tests:fixed                                   OK              12.45s
+ 78/240 main - nix-functional-tests:import-from-derivation                  OK               4.46s
+ 79/240 main - nix-functional-tests:impure-env                              OK               1.46s
+ 80/240 main - nix-functional-tests:impure-derivations                      OK               4.03s
+ 81/240 main - nix-functional-tests:fetchMercurial                          OK              24.89s
+ 82/240 main - nix-functional-tests:json                                    OK               1.81s
+ 83/240 main - nix-functional-tests:impure-eval                             OK               2.63s
+ 84/240 main - nix-functional-tests:lang-gc                                 SKIP             0.74s   exit status 77
+ 85/240 main - nix-functional-tests:linux-sandbox                           SKIP             0.75s   exit status 77
+ 86/240 main - nix-functional-tests:legacy-ssh-store                        OK               1.44s
+ 87/240 main - nix-functional-tests:long-socket-path                        SKIP             1.01s   exit status 77
+ 88/240 main - nix-functional-tests:hash-path                               OK              13.59s
+ 89/240 main - nix-functional-tests:logging                                 OK               3.11s
+ 90/240 main - nix-functional-tests:multiple-outputs-substitute-failure     SKIP             0.75s   exit status 77
+ 91/240 main - nix-functional-tests:hash-convert                            OK              16.46s
+ 92/240 main - nix-functional-tests:make-content-addressed                  OK               3.19s
+ 93/240 main - nix-functional-tests:misc                                    OK               3.19s
+ 94/240 main - nix-functional-tests:nar-access                              OK               4.29s
+ 95/240 main - nix-functional-tests:multiple-outputs                        OK               6.57s
+ 96/240 main - nix-functional-tests:nested-sandboxing                       OK               4.43s
+ 97/240 main - nix-functional-tests:nars                                    OK               6.67s
+ 98/240 main - nix-functional-tests:nix-build                               OK               4.54s
+ 99/240 main - nix-functional-tests:nix-collect-garbage-d                   OK               4.52s
+100/240 main - nix-functional-tests:nix-copy-ssh-ng                         OK               4.07s
+101/240 main - nix-functional-tests:nix-copy-ssh                            OK               2.97s
+102/240 main - nix-functional-tests:nix-channel                             OK               7.58s
+103/240 main - nix-functional-tests:no-url-literals                         OK               1.30s
+104/240 main - nix-functional-tests:nix_path                                OK               4.90s
+105/240 main - nix-functional-tests:output-normalization                    OK               1.12s
+106/240 main - nix-functional-tests:optimise-store                          OK               2.83s
+107/240 main - nix-functional-tests:pass-as-file                            OK               1.07s
+108/240 main - nix-functional-tests:path-info                               OK               2.97s
+109/240 main - nix-functional-tests:placeholders                            OK              -0.42s
+110/240 main - nix-functional-tests:nix-shell                               OK              10.24s
+111/240 main - nix-functional-tests:path-from-hash-part                     OK               6.14s
+112/240 main - nix-functional-tests:read-only-store                         SKIP             0.78s   exit status 77
+113/240 main - nix-functional-tests:post-hook                               OK               4.33s
+114/240 main - nix-functional-tests:readfile-context                        OK               1.47s
+115/240 main - nix-functional-tests:pure-eval                               OK               4.81s
+116/240 main - nix-functional-tests:referrers                               SKIP             0.75s   exit status 77
+117/240 main - nix-functional-tests:nix-profile                             OK              16.64s
+118/240 main - nix-functional-tests:repair                                  SKIP             0.73s   exit status 77
+119/240 main - nix-functional-tests:help                                    SKIP            44.09s   exit status 77
+120/240 main - nix-functional-tests:recursive                               OK               4.24s
+121/240 main - nix-functional-tests:secure-drv-outputs                      OK               2.01s
+122/240 main - nix-functional-tests:repl                                    OK               5.24s
+123/240 main - nix-functional-tests:selfref-gc                              OK               1.63s
+124/240 main - nix-functional-tests:search                                  OK               4.19s
+125/240 main - nix-functional-tests:restricted                              OK               6.37s
+126/240 main - nix-functional-tests:short-path-literals                     OK               2.78s
+127/240 main - nix-functional-tests:shell                                   OK               4.90s
+128/240 main - nix-functional-tests:ssh-relay                               OK               1.68s
+129/240 main - nix-functional-tests:store-print-env                         OK               1.28s
+130/240 main - nix-functional-tests:store-info                              OK               1.85s
+131/240 main - nix-functional-tests:simple                                  OK               5.70s
+132/240 main - nix-functional-tests:suggestions                             OK               1.75s
+133/240 main - nix-functional-tests:substitute-with-invalid-ca              OK               2.20s
+134/240 main - nix-functional-tests:supplementary-groups                    SKIP             0.77s   exit status 77
+135/240 main - nix-functional-tests:symlinks                                OK               1.19s
+136/240 main - nix-functional-tests:signing                                 OK               9.31s
+137/240 main - nix-functional-tests:test-infra                              OK               1.15s
+138/240 main - nix-functional-tests:timeout                                 SKIP             0.80s   exit status 77
+139/240 main - nix-functional-tests:user-envs-migration                     SKIP             0.99s   exit status 77
+140/240 main - nix-functional-tests:toString-path                           OK               1.16s
+141/240 main - nix-functional-tests:structured-attrs                        OK               6.63s
+142/240 libstoreconsumer - nix-functional-tests:test-libstoreconsumer       OK               1.17s
+143/240 main - nix-functional-tests:why-depends                             OK               2.33s
+144/240 plugins - nix-functional-tests:register-setting-and-primop          OK               0.79s
+145/240 main - nix-functional-tests:remote-store                            OK              22.46s
+146/240 repl - nix-functional-tests:edit-builtin-files                      OK               1.14s
+147/240 repl - nix-functional-tests:simple                                  OK               1.88s
+148/240 repl - nix-functional-tests:reload-flakes                           OK               2.06s
+149/240 repl - nix-functional-tests:characterisation                        OK               7.01s   35 subtests passed
+150/240 ca - nix-functional-tests:build-trace-delete                        SKIP             1.28s   exit status 77
+151/240 ca - nix-functional-tests:build-delete                              OK               4.63s
+152/240 main - nix-functional-tests:tarball                                 OK              15.26s
+153/240 ca - nix-functional-tests:build-cache                               OK               7.69s
+154/240 ca - nix-functional-tests:build-with-garbage-path                   OK               3.00s
+155/240 ca - nix-functional-tests:concurrent-builds                         SKIP             1.27s   exit status 77
+156/240 ca - nix-functional-tests:derivation-advanced-attributes            OK               1.15s
+157/240 ca - nix-functional-tests:eval-store                                SKIP             1.48s   exit status 77
+158/240 ca - nix-functional-tests:derivation-json                           OK               2.50s
+159/240 main - nix-functional-tests:user-envs                               OK              16.81s
+160/240 ca - nix-functional-tests:build                                     OK               6.96s
+161/240 ca - nix-functional-tests:duplicate-realisation-in-closure          SKIP             4.23s   exit status 77
+162/240 ca - nix-functional-tests:import-from-derivation                    OK               2.43s
+163/240 ca - nix-functional-tests:issue-13247                               OK               3.15s
+164/240 ca - nix-functional-tests:gc                                        OK               4.63s
+165/240 ca - nix-functional-tests:nix-run                                   OK               1.68s
+166/240 ca - nix-functional-tests:multiple-outputs                          OK               5.93s
+167/240 ca - nix-functional-tests:nix-copy                                  OK               7.17s
+168/240 ca - nix-functional-tests:post-hook                                 OK               4.89s
+169/240 ca - nix-functional-tests:recursive                                 OK               5.25s
+170/240 ca - nix-functional-tests:selfref-gc                                OK               2.47s
+171/240 ca - nix-functional-tests:new-build-cmd                             OK              12.03s
+172/240 ca - nix-functional-tests:substitute                                SKIP             1.19s   exit status 77
+173/240 ca - nix-functional-tests:repl                                      OK               5.96s
+174/240 ca - nix-functional-tests:nix-shell                                 OK              12.30s
+175/240 dyn-drv - nix-functional-tests:text-hashed-output                   OK               2.74s
+176/240 ca - nix-functional-tests:why-depends                               OK               3.06s
+177/240 dyn-drv - nix-functional-tests:recursive-mod-json                   OK               2.66s
+178/240 dyn-drv - nix-functional-tests:build-built-drv                      OK               2.49s
+179/240 dyn-drv - nix-functional-tests:failing-outer                        OK               2.47s
+180/240 dyn-drv - nix-functional-tests:eval-outputOf                        OK               2.82s
+181/240 dyn-drv - nix-functional-tests:old-daemon-error-hack                SKIP             0.83s   exit status 77
+182/240 dyn-drv - nix-functional-tests:dep-built-drv                        OK               2.27s
+183/240 dyn-drv - nix-functional-tests:dep-built-drv-submitted              SKIP             1.47s   exit status 77
+184/240 dyn-drv - nix-functional-tests:submit-failure                       SKIP             1.44s   exit status 77
+185/240 dyn-drv - nix-functional-tests:submit-reference                     SKIP             1.44s   exit status 77
+186/240 dyn-drv - nix-functional-tests:dep-built-drv-2                      OK               1.48s
+187/240 flakes - nix-functional-tests:edit                                  OK               1.43s
+188/240 flakes - nix-functional-tests:git-rev                               OK               1.35s
+189/240 ca - nix-functional-tests:signatures                                OK              10.19s
+190/240 flakes - nix-functional-tests:circular                              OK               1.98s
+191/240 flakes - nix-functional-tests:run                                   OK               2.73s
+192/240 flakes - nix-functional-tests:inputs                                OK               1.43s
+193/240 flakes - nix-functional-tests:develop                               OK               5.14s
+194/240 flakes - nix-functional-tests:init                                  OK               4.50s
+195/240 flakes - nix-functional-tests:follow-paths                          OK               6.73s
+196/240 flakes - nix-functional-tests:unlocked-override                     OK               2.97s
+197/240 flakes - nix-functional-tests:check                                 OK               7.01s
+198/240 flakes - nix-functional-tests:bundle                                OK               9.44s
+199/240 flakes - nix-functional-tests:absolute-paths                        OK               0.98s
+200/240 flakes - nix-functional-tests:absolute-attr-paths                   OK               1.29s
+201/240 flakes - nix-functional-tests:prefetch                              OK               1.02s
+202/240 main - nix-functional-tests:lang                                    OK             106.60s
+203/240 flakes - nix-functional-tests:build-paths                           OK               4.07s
+204/240 flakes - nix-functional-tests:flake-in-submodule                    OK               4.15s
+205/240 flakes - nix-functional-tests:eval-cache                            OK               3.29s
+206/240 flakes - nix-functional-tests:dubious-query                         OK               2.67s
+207/240 flakes - nix-functional-tests:search-root                           OK               5.82s
+208/240 flakes - nix-functional-tests:show                                  OK               4.24s
+209/240 flakes - nix-functional-tests:commit-lock-file-summary              OK               2.10s
+210/240 flakes - nix-functional-tests:shebang                               OK               3.92s
+211/240 flakes - nix-functional-tests:config                                OK              10.03s
+212/240 flakes - nix-functional-tests:relative-paths-lockfile               OK               3.39s
+213/240 flakes - nix-functional-tests:debugger                              OK              -0.69s
+214/240 flakes - nix-functional-tests:symlink-paths                         OK               0.67s
+215/240 flakes - nix-functional-tests:relative-paths                        OK               3.95s
+216/240 flakes - nix-functional-tests:mercurial                             OK              28.92s
+217/240 flakes - nix-functional-tests:trace-ifd                             OK               1.21s
+218/240 flakes - nix-functional-tests:get-flake                             OK               1.57s
+219/240 flakes - nix-functional-tests:type-error-fallback                   OK               1.93s
+220/240 git - nix-functional-tests:exact-rev-fetch-bucketed-refs            OK               2.01s
+221/240 flakes - nix-functional-tests:source-paths                          OK               4.39s
+222/240 flakes - nix-functional-tests:flakes                                OK              34.89s
+223/240 flakes - nix-functional-tests:non-flake-inputs                      OK              10.45s
+224/240 git - nix-functional-tests:packed-refs-no-cache                     OK               2.25s
+225/240 git - nix-functional-tests:symlinked-repo                           OK               3.67s
+226/240 flakes - nix-functional-tests:old-lockfiles                         OK               8.68s
+227/240 local-overlay-store - nix-functional-tests:redundant-add            OK               2.03s
+228/240 local-overlay-store - nix-functional-tests:check-post-init          OK               4.60s
+229/240 local-overlay-store - nix-functional-tests:bad-uris                 OK               1.19s
+230/240 local-overlay-store - nix-functional-tests:build                    OK               2.28s
+231/240 local-overlay-store - nix-functional-tests:add-lower                OK               2.20s
+232/240 git-hashing - nix-functional-tests:fixed                            OK               7.72s
+233/240 local-overlay-store - nix-functional-tests:delete-duplicate         OK               2.18s
+234/240 local-overlay-store - nix-functional-tests:delete-refs              OK               4.47s
+235/240 local-overlay-store - nix-functional-tests:verify                   OK               2.92s
+236/240 local-overlay-store - nix-functional-tests:optimise                 OK               2.51s
+237/240 local-overlay-store - nix-functional-tests:gc                       OK               3.79s
+238/240 git-hashing - nix-functional-tests:simple-sha1                      OK              15.74s
+239/240 local-overlay-store - nix-functional-tests:stale-file-handle        OK               5.69s
+240/240 git-hashing - nix-functional-tests:simple-sha256                    OK              17.17s
+
+Ok:                206 
+Fail:              0   
+Skipped:           34  
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt

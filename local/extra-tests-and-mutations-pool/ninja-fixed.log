@@ -1,0 +1,1019 @@
+ninja: Entering directory `build'
+[0/1] Regenerating build files
+The Meson build system
+Version: 1.10.2
+Source dir: /home/osto/nix-gsoc
+Build dir: /home/osto/nix-gsoc/build
+Build type: native build
+Project name: Nix
+Project version: 2.36.0
+C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+C++ linker for the host machine: g++ ld.mold 2.41.0
+Host machine cpu family: x86_64
+Host machine cpu: x86_64
+
+Executing subproject libutil 
+
+libutil| Project name: nix-util
+libutil| Project version: 2.36.0
+libutil| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libutil| C++ linker for the host machine: g++ ld.mold 2.41.0
+libutil| Checking for function "posix_fallocate" : YES (cached)
+libutil| Checking for function "bindat" : NO (cached)
+libutil| Checking for function "connectat" : NO (cached)
+libutil| Dependency libblake3 found: YES 1.8.5 (cached)
+libutil| Dependency boost (modules: context, coroutine, iostreams, url) found: YES 1.89.0 (cached)
+libutil| Dependency libcrypto found: YES 3.6.3 (cached)
+libutil| Dependency libarchive found: YES 3.8.9 (cached)
+libutil| Dependency libsodium found: YES 1.0.22 (cached)
+libutil| Dependency libbrotlicommon found: YES 1.2.0 (cached)
+libutil| Dependency libbrotlidec found: YES 1.2.0 (cached)
+libutil| Dependency libbrotlienc found: YES 1.2.0 (cached)
+libutil| Dependency libzstd found: YES 1.5.7 (cached)
+libutil| Dependency libcpuid found: YES 0.8.1 (cached)
+libutil| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libutil| Configuring util-config-private.hh using configuration
+libutil| Dependency threads found: YES unknown (cached)
+libutil| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libutil| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libutil| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libutil| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libutil| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libutil| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libutil| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libutil| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libutil| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libutil| Checking if "using libstdc++" compiles: YES (cached)
+libutil| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libutil| Configuring config.hh using configuration
+libutil| Has header "widechar_width.h" : NO (cached)
+libutil| Header "fcntl.h" has symbol "AT_SYMLINK_NOFOLLOW" : YES (cached)
+libutil| Header "fcntl.h" has symbol "F_GETPATH" : NO (cached)
+libutil| Checking for function "close_range" : YES (cached)
+libutil| Checking for function "closefrom" : YES (cached)
+libutil| Checking for function "lutimes" : YES (cached)
+libutil| Checking for function "pipe2" : YES (cached)
+libutil| Checking for function "strsignal" : YES (cached)
+libutil| Checking for function "sysconf" : YES (cached)
+libutil| Checking for function "utimensat" : YES (cached)
+libutil| Checking if "have copy_file_range" links: YES (cached)
+libutil| Configuring util-unix-config-private.hh using configuration
+libutil| Found pkg-config: YES (/nix/store/8w5py73f81yixkqkzq0w3f2w90326fkr-pkg-config-wrapper-0.29.2/bin/pkg-config) 0.29.2
+libutil| Build targets in project: 1
+libutil| Subproject libutil finished.
+
+
+Executing subproject libstore 
+
+libstore| Project name: nix-store
+libstore| Project version: 2.36.0
+libstore| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libstore| C++ linker for the host machine: g++ ld.mold 2.41.0
+libstore| Dependency nix-util found: YES 2.36.0 (overridden)
+libstore| Program ln found: YES (/nix/store/61685rbaxmpigwi3z23i33sv3jyfl70q-coreutils-9.11/bin/ln)
+libstore| Checking for function "posix_fallocate" : YES (cached)
+libstore| Checking for function "statvfs" : YES (cached)
+libstore| Checking for function "open_tree" : YES (cached)
+libstore| Checking for function "move_mount" : YES (cached)
+libstore| Has header "linux/landlock.h" : YES (cached)
+libstore| Has header "sys/xattr.h" : YES (cached)
+libstore| Checking for function "llistxattr" : YES (cached)
+libstore| Checking for function "lremovexattr" : YES (cached)
+libstore| Dependency boost (modules: container, url) found: YES 1.89.0 (cached)
+libstore| Dependency libcurl found: YES 8.21.0 (cached)
+libstore| Dependency libseccomp found: YES 2.6.1 (cached)
+libstore| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libstore| Dependency sqlite3 found: YES 3.51.2 (cached)
+libstore| Dependency aws-crt-cpp (modules: AWS::aws-crt-cpp) found: YES 0.34.3 (cached)
+libstore| Program /nix/store/wjn2kkmswxldfbqgjai4vf92wd9z1p2k-busybox-1.37.0/bin/busybox found: YES (/nix/store/wjn2kkmswxldfbqgjai4vf92wd9z1p2k-busybox-1.37.0/bin/busybox)
+libstore| Program lsof found: YES (/usr/bin/lsof)
+libstore| Configuring store-config-private.hh using configuration
+libstore| Dependency threads found: YES unknown (cached)
+libstore| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libstore| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libstore| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libstore| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libstore| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libstore| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libstore| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libstore| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libstore| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libstore| Checking if "using libstdc++" compiles: YES (cached)
+libstore| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libstore| Configuring config.hh using configuration
+libstore| Build targets in project: 2
+libstore| Subproject libstore finished.
+
+
+Executing subproject libfetchers 
+
+libfetchers| Project name: nix-fetchers
+libfetchers| Project version: 2.36.0
+libfetchers| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libfetchers| C++ linker for the host machine: g++ ld.mold 2.41.0
+libfetchers| Dependency nix-util found: YES 2.36.0 (overridden)
+libfetchers| Dependency nix-store found: YES 2.36.0 (overridden)
+libfetchers| Configuring fetchers-config-private.hh using configuration
+libfetchers| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libfetchers| Dependency libgit2 found: YES 1.9.7 (cached)
+libfetchers| Dependency threads found: YES unknown (cached)
+libfetchers| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libfetchers| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libfetchers| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libfetchers| Checking if "using libstdc++" compiles: YES (cached)
+libfetchers| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libfetchers| Build targets in project: 3
+libfetchers| Subproject libfetchers finished.
+
+
+Executing subproject libexpr 
+
+libexpr| Project name: nix-expr
+libexpr| Project version: 2.36.0
+libexpr| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libexpr| C++ linker for the host machine: g++ ld.mold 2.41.0
+libexpr| Dependency nix-util found: YES 2.36.0 (overridden)
+libexpr| Dependency nix-store found: YES 2.36.0 (overridden)
+libexpr| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libexpr| Checking for function "sysconf" : YES (cached)
+libexpr| Dependency boost (modules: container, context) found: YES 1.89.0 (cached)
+libexpr| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libexpr| Dependency sqlite3 found: YES 3.51.2 (cached)
+libexpr| Dependency bdw-gc found: YES 8.2.12 (cached)
+libexpr| Checking for function "pthread_attr_get_np" : NO (cached)
+libexpr| Checking for function "pthread_getattr_np" : YES (cached)
+libexpr| Dependency toml11 found: YES 4.4.0 (cached)
+libexpr| Dependency libcpuid found: YES 0.8.1 (cached)
+libexpr| Configuring expr-config-private.hh using configuration
+libexpr| Dependency threads found: YES unknown (cached)
+libexpr| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libexpr| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libexpr| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libexpr| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libexpr| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libexpr| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libexpr| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libexpr| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libexpr| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libexpr| Checking if "using libstdc++" compiles: YES (cached)
+libexpr| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libexpr| Configuring config.hh using configuration
+libexpr| Build targets in project: 7
+libexpr| Subproject libexpr finished.
+
+
+Executing subproject libflake 
+
+libflake| Project name: nix-flake
+libflake| Project version: 2.36.0
+libflake| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libflake| C++ linker for the host machine: g++ ld.mold 2.41.0
+libflake| Dependency nix-util found: YES 2.36.0 (overridden)
+libflake| Dependency nix-store found: YES 2.36.0 (overridden)
+libflake| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libflake| Dependency nix-expr found: YES 2.36.0 (overridden)
+libflake| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libflake| Dependency threads found: YES unknown (cached)
+libflake| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libflake| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libflake| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libflake| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libflake| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libflake| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libflake| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libflake| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libflake| Checking if "using libstdc++" compiles: YES (cached)
+libflake| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libflake| Program bash found: YES (/nix/store/axl12yr00f105bjqvj628f5f0s6r0cnp-bash-5.3p9/bin/bash)
+libflake| Build targets in project: 8
+libflake| Subproject libflake finished.
+
+
+Executing subproject libmain 
+
+libmain| Project name: nix-main
+libmain| Project version: 2.36.0
+libmain| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libmain| C++ linker for the host machine: g++ ld.mold 2.41.0
+libmain| Dependency nix-util found: YES 2.36.0 (overridden)
+libmain| Dependency nix-store found: YES 2.36.0 (overridden)
+libmain| Dependency nix-expr found: YES 2.36.0 (overridden)
+libmain| Configuring main-config-private.hh using configuration
+libmain| Dependency threads found: YES unknown (cached)
+libmain| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libmain| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libmain| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libmain| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libmain| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libmain| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libmain| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libmain| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libmain| Checking if "using libstdc++" compiles: YES (cached)
+libmain| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libmain| Build targets in project: 9
+libmain| Subproject libmain finished.
+
+
+Executing subproject libcmd 
+
+libcmd| Project name: nix-cmd
+libcmd| Project version: 2.36.0
+libcmd| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libcmd| C++ linker for the host machine: g++ ld.mold 2.41.0
+libcmd| Dependency nix-util found: YES 2.36.0 (overridden)
+libcmd| Dependency nix-store found: YES 2.36.0 (overridden)
+libcmd| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libcmd| Dependency nix-expr found: YES 2.36.0 (overridden)
+libcmd| Dependency nix-flake found: YES 2.36.0 (overridden)
+libcmd| Dependency nix-main found: YES 2.36.0 (overridden)
+libcmd| Dependency nlohmann_json found: YES 3.12.0 (cached)
+libcmd| Dependency lowdown found: YES 3.0.1 (cached)
+libcmd| Dependency libeditline found: YES 1.17.2-pre (cached)
+libcmd| Configuring cmd-config-private.hh using configuration
+libcmd| Dependency threads found: YES unknown (cached)
+libcmd| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libcmd| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libcmd| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libcmd| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libcmd| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libcmd| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libcmd| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libcmd| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libcmd| Checking if "using libstdc++" compiles: YES (cached)
+libcmd| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libcmd| Build targets in project: 10
+libcmd| Subproject libcmd finished.
+
+
+Executing subproject libutil-c 
+
+libutil-c| Project name: nix-util-c
+libutil-c| Project version: 2.36.0
+libutil-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libutil-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libutil-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libutil-c| Configuring nix_api_util_config.h using configuration
+libutil-c| Dependency threads found: YES unknown (cached)
+libutil-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libutil-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libutil-c| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libutil-c| Checking if "using libstdc++" compiles: YES (cached)
+libutil-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libutil-c| Build targets in project: 12
+libutil-c| Subproject libutil-c finished.
+
+
+Executing subproject libstore-c 
+
+libstore-c| Project name: nix-store-c
+libstore-c| Project version: 2.36.0
+libstore-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libstore-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libstore-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libstore-c| Dependency nix-store found: YES 2.36.0 (overridden)
+libstore-c| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libstore-c| Dependency threads found: YES unknown (cached)
+libstore-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libstore-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libstore-c| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libstore-c| Checking if "using libstdc++" compiles: YES (cached)
+libstore-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libstore-c| Build targets in project: 14
+libstore-c| Subproject libstore-c finished.
+
+
+Executing subproject libfetchers-c 
+
+libfetchers-c| Project name: nix-fetchers-c
+libfetchers-c| Project version: 2.36.0
+libfetchers-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libfetchers-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libfetchers-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libfetchers-c| Dependency nix-store found: YES 2.36.0 (overridden)
+libfetchers-c| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libfetchers-c| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libfetchers-c| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libfetchers-c| Dependency threads found: YES unknown (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libfetchers-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libfetchers-c| Checking if "using libstdc++" compiles: YES (cached)
+libfetchers-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libfetchers-c| Build targets in project: 16
+libfetchers-c| Subproject libfetchers-c finished.
+
+
+Executing subproject libexpr-c 
+
+libexpr-c| Project name: nix-expr-c
+libexpr-c| Project version: 2.36.0
+libexpr-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libexpr-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libexpr-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libexpr-c| Dependency nix-store found: YES 2.36.0 (overridden)
+libexpr-c| Dependency nix-expr found: YES 2.36.0 (overridden)
+libexpr-c| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libexpr-c| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libexpr-c| Dependency threads found: YES unknown (cached)
+libexpr-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libexpr-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libexpr-c| Compiler for C++ supports arguments -Werror=weak-vtables: NO (cached)
+libexpr-c| Checking if "using libstdc++" compiles: YES (cached)
+libexpr-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libexpr-c| Build targets in project: 18
+libexpr-c| Subproject libexpr-c finished.
+
+
+Executing subproject libflake-c 
+
+libflake-c| Project name: nix-flake-c
+libflake-c| Project version: 2.36.0
+libflake-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libflake-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libflake-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-store found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-expr found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-flake found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-fetchers-c found: YES 2.36.0 (overridden)
+libflake-c| Dependency nix-expr-c found: YES 2.36.0 (overridden)
+libflake-c| Dependency threads found: YES unknown (cached)
+libflake-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libflake-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libflake-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libflake-c| Checking if "using libstdc++" compiles: YES (cached)
+libflake-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libflake-c| Build targets in project: 20
+libflake-c| Subproject libflake-c finished.
+
+
+Executing subproject libmain-c 
+
+libmain-c| Project name: nix-main-c
+libmain-c| Project version: 2.36.0
+libmain-c| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libmain-c| C++ linker for the host machine: g++ ld.mold 2.41.0
+libmain-c| Dependency nix-util found: YES 2.36.0 (overridden)
+libmain-c| Dependency nix-store found: YES 2.36.0 (overridden)
+libmain-c| Dependency nix-main found: YES 2.36.0 (overridden)
+libmain-c| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libmain-c| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libmain-c| Dependency threads found: YES unknown (cached)
+libmain-c| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libmain-c| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libmain-c| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libmain-c| Checking if "using libstdc++" compiles: YES (cached)
+libmain-c| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libmain-c| Build targets in project: 22
+libmain-c| Subproject libmain-c finished.
+
+
+Executing subproject nix 
+
+nix| Project name: nix
+nix| Project version: 2.36.0
+nix| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+nix| C++ linker for the host machine: g++ ld.mold 2.41.0
+nix| Dependency nix-store found: YES 2.36.0 (overridden)
+nix| Dependency nix-util found: YES 2.36.0 (overridden)
+nix| Dependency nix-expr found: YES 2.36.0 (overridden)
+nix| Dependency nix-flake found: YES 2.36.0 (overridden)
+nix| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+nix| Dependency nix-main found: YES 2.36.0 (overridden)
+nix| Dependency nix-cmd found: YES 2.36.0 (overridden)
+nix| Dependency nix-util-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency nix-store-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency nix-fetchers-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency nix-expr-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency nix-flake-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency nix-main-c-whole-archive found: YES 2.36.0 (overridden)
+nix| Dependency mimalloc found: YES 3.5 (cached)
+nix| Configuring cli-config-private.hh using configuration
+nix| Dependency threads found: YES unknown (cached)
+nix| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+nix| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+nix| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+nix| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+nix| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+nix| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+nix| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+nix| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+nix| Checking if "using libstdc++" compiles: YES (cached)
+nix| Checking if "linker can wrap __assert_fail" links: YES (cached)
+nix| Program bash found: YES (/nix/store/axl12yr00f105bjqvj628f5f0s6r0cnp-bash-5.3p9/bin/bash)
+nix| Configuring nix-profile.sh using configuration
+nix| Configuring nix.sh using configuration
+nix| Configuring nix.fish using configuration
+nix| Configuring nix-daemon.sh using configuration
+nix| Configuring nix-daemon.fish using configuration
+nix| Configuring nix-daemon.socket using configuration
+nix| Configuring nix-daemon.service using configuration
+nix| Configuring nix-daemon.conf using configuration
+nix| Build targets in project: 35
+nix| Subproject nix finished.
+
+
+Executing subproject nswrapper 
+
+nswrapper| Project name: nix-nswrapper
+nswrapper| Project version: 2.36.0
+nswrapper| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+nswrapper| C++ linker for the host machine: g++ ld.mold 2.41.0
+nswrapper| Dependency nix-util found: YES 2.36.0 (overridden)
+nswrapper| Dependency threads found: YES unknown (cached)
+nswrapper| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+nswrapper| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+nswrapper| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+nswrapper| Checking if "using libstdc++" compiles: YES (cached)
+nswrapper| Checking if "linker can wrap __assert_fail" links: YES (cached)
+nswrapper| Build targets in project: 36
+nswrapper| Subproject nswrapper finished.
+
+
+Executing subproject libutil-test-support 
+
+libutil-test-support| Project name: nix-util-test-support
+libutil-test-support| Project version: 2.36.0
+libutil-test-support| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libutil-test-support| C++ linker for the host machine: g++ ld.mold 2.41.0
+libutil-test-support| Dependency nix-util found: YES 2.36.0 (overridden)
+libutil-test-support| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libutil-test-support| Dependency rapidcheck found: YES unknown (cached)
+libutil-test-support| Dependency threads found: YES unknown (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libutil-test-support| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libutil-test-support| Checking if "using libstdc++" compiles: YES (cached)
+libutil-test-support| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libutil-test-support| Build targets in project: 37
+libutil-test-support| Subproject libutil-test-support finished.
+
+
+Executing subproject libutil-tests 
+
+libutil-tests| Project name: nix-util-tests
+libutil-tests| Project version: 2.36.0
+libutil-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libutil-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+libutil-tests| Dependency nix-util found: YES 2.36.0 (overridden)
+libutil-tests| Dependency threads found: YES unknown (cached)
+libutil-tests| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libutil-tests| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libutil-tests| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libutil-tests| Checking if "using libstdc++" compiles: YES (cached)
+libutil-tests| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libutil-tests| Dependency nix-util-c found: YES 2.36.0 (overridden)
+libutil-tests| Dependency nix-util-test-support found: YES 2.36.0 (overridden)
+libutil-tests| Dependency rapidcheck found: YES unknown (cached)
+libutil-tests| Dependency gtest found: YES 1.17.0 (cached)
+libutil-tests| Dependency gmock found: YES 1.17.0 (cached)
+libutil-tests| Dependency libzstd found: YES 1.5.7 (cached)
+libutil-tests| Configuring util-tests-config.hh using configuration
+libutil-tests| Program enosys found: YES (/nix/store/kql2l4nafrby8ghb3klj5n8arhd2v61h-util-linux-2.42.2-bin/bin/enosys)
+libutil-tests| Build targets in project: 38
+libutil-tests| Subproject libutil-tests finished.
+
+
+Executing subproject libstore-test-support 
+
+libstore-test-support| Project name: nix-store-test-support
+libstore-test-support| Project version: 2.36.0
+libstore-test-support| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libstore-test-support| C++ linker for the host machine: g++ ld.mold 2.41.0
+libstore-test-support| Dependency nix-util found: YES 2.36.0 (overridden)
+libstore-test-support| Dependency nix-util-test-support found: YES 2.36.0 (overridden)
+libstore-test-support| Dependency nix-store found: YES 2.36.0 (overridden)
+libstore-test-support| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libstore-test-support| Dependency rapidcheck found: YES unknown (cached)
+libstore-test-support| Dependency gtest found: YES 1.17.0 (cached)
+libstore-test-support| Dependency threads found: YES unknown (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libstore-test-support| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libstore-test-support| Checking if "using libstdc++" compiles: YES (cached)
+libstore-test-support| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libstore-test-support| Build targets in project: 39
+libstore-test-support| Subproject libstore-test-support finished.
+
+
+Executing subproject libstore-tests 
+
+libstore-tests| Project name: nix-store-tests
+libstore-tests| Project version: 2.36.0
+libstore-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libstore-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+libstore-tests| Dependency nix-store found: YES 2.36.0 (overridden)
+libstore-tests| Dependency threads found: YES unknown (cached)
+libstore-tests| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libstore-tests| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libstore-tests| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libstore-tests| Checking if "using libstdc++" compiles: YES (cached)
+libstore-tests| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libstore-tests| Dependency nix-store-c found: YES 2.36.0 (overridden)
+libstore-tests| Dependency nix-store-test-support found: YES 2.36.0 (overridden)
+libstore-tests| Dependency sqlite3 found: YES 3.51.2 (cached)
+libstore-tests| Dependency rapidcheck found: YES unknown (cached)
+libstore-tests| Dependency gtest found: YES 1.17.0 (cached)
+libstore-tests| Dependency gmock found: YES 1.17.0 (cached)
+libstore-tests| Configuring store-tests-config.hh using configuration
+libstore-tests| Build targets in project: 40
+libstore-tests| Subproject libstore-tests finished.
+
+
+Executing subproject libfetchers-tests 
+
+libfetchers-tests| Project name: nix-fetchers-tests
+libfetchers-tests| Project version: 2.36.0
+libfetchers-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libfetchers-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+libfetchers-tests| Dependency nix-store-test-support found: YES 2.36.0 (overridden)
+libfetchers-tests| Dependency nix-fetchers found: YES 2.36.0 (overridden)
+libfetchers-tests| Dependency nix-fetchers-c found: YES 2.36.0 (overridden)
+libfetchers-tests| Dependency rapidcheck found: YES unknown (cached)
+libfetchers-tests| Dependency gtest found: YES 1.17.0 (cached)
+libfetchers-tests| Dependency gmock found: YES 1.17.0 (cached)
+libfetchers-tests| Dependency libgit2 found: YES 1.9.7 (cached)
+libfetchers-tests| Dependency threads found: YES unknown (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libfetchers-tests| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libfetchers-tests| Checking if "using libstdc++" compiles: YES (cached)
+libfetchers-tests| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libfetchers-tests| Build targets in project: 41
+libfetchers-tests| Subproject libfetchers-tests finished.
+
+
+Executing subproject libexpr-test-support 
+
+libexpr-test-support| Project name: nix-expr-test-support
+libexpr-test-support| Project version: 2.36.0
+libexpr-test-support| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libexpr-test-support| C++ linker for the host machine: g++ ld.mold 2.41.0
+libexpr-test-support| Dependency nix-util found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency nix-util-test-support found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency nix-store found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency nix-store-test-support found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency nix-expr found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency nix-expr-c found: YES 2.36.0 (overridden)
+libexpr-test-support| Dependency rapidcheck found: YES unknown (cached)
+libexpr-test-support| Dependency threads found: YES unknown (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libexpr-test-support| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libexpr-test-support| Checking if "using libstdc++" compiles: YES (cached)
+libexpr-test-support| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libexpr-test-support| Build targets in project: 42
+libexpr-test-support| Subproject libexpr-test-support finished.
+
+
+Executing subproject libexpr-tests 
+
+libexpr-tests| Project name: nix-expr-tests
+libexpr-tests| Project version: 2.36.0
+libexpr-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libexpr-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+libexpr-tests| Dependency nix-expr found: YES 2.36.0 (overridden)
+libexpr-tests| Dependency nix-expr-c found: YES 2.36.0 (overridden)
+libexpr-tests| Dependency nix-expr-test-support found: YES 2.36.0 (overridden)
+libexpr-tests| Dependency rapidcheck found: YES unknown (cached)
+libexpr-tests| Dependency gtest found: YES 1.17.0 (cached)
+libexpr-tests| Dependency gmock found: YES 1.17.0 (cached)
+libexpr-tests| Configuring expr-tests-config.hh using configuration
+libexpr-tests| Dependency threads found: YES unknown (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libexpr-tests| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libexpr-tests| Checking if "using libstdc++" compiles: YES (cached)
+libexpr-tests| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libexpr-tests| Build targets in project: 43
+libexpr-tests| Subproject libexpr-tests finished.
+
+
+Executing subproject libflake-tests 
+
+libflake-tests| Project name: nix-flake-tests
+libflake-tests| Project version: 2.36.0
+libflake-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+libflake-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+libflake-tests| Dependency nix-expr-test-support found: YES 2.36.0 (overridden)
+libflake-tests| Dependency nix-flake found: YES 2.36.0 (overridden)
+libflake-tests| Dependency nix-flake-c found: YES 2.36.0 (overridden)
+libflake-tests| Dependency rapidcheck found: YES unknown (cached)
+libflake-tests| Dependency gtest found: YES 1.17.0 (cached)
+libflake-tests| Dependency threads found: YES unknown (cached)
+libflake-tests| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+libflake-tests| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+libflake-tests| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+libflake-tests| Checking if "using libstdc++" compiles: YES (cached)
+libflake-tests| Checking if "linker can wrap __assert_fail" links: YES (cached)
+libflake-tests| Build targets in project: 44
+libflake-tests| Subproject libflake-tests finished.
+
+
+Executing subproject nix-functional-tests 
+
+nix-functional-tests| Project name: nix-functional-tests
+nix-functional-tests| Project version: 2.36.0
+nix-functional-tests| Program nix found: YES (overridden)
+nix-functional-tests| Program bash found: YES (/nix/store/axl12yr00f105bjqvj628f5f0s6r0cnp-bash-5.3p9/bin/bash)
+Cleaning... 0 files.
+nix-functional-tests| Program busybox found: YES (/nix/store/wjn2kkmswxldfbqgjai4vf92wd9z1p2k-busybox-1.37.0/bin/busybox)
+nix-functional-tests| Program ls found: YES (/nix/store/61685rbaxmpigwi3z23i33sv3jyfl70q-coreutils-9.11/bin/ls)
+nix-functional-tests| Program dot found: NO
+nix-functional-tests| Configuring subst-vars.sh using configuration
+nix-functional-tests| ../src/nix-functional-tests/common/meson.build:1: WARNING: The variable(s) 'variable' in the input file 'src/nix-functional-tests/common/subst-vars.sh.in' are not present in the given configuration data.
+nix-functional-tests| Configuring config.nix using configuration
+nix-functional-tests| Dependency nix-store found: YES 2.36.0 (overridden)
+nix-functional-tests| ../src/nix-functional-tests/meson.build:207: WARNING: add_languages is missing native:, assuming languages are wanted for both host and build.
+nix-functional-tests| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+nix-functional-tests| C++ linker for the host machine: g++ ld.mold 2.41.0
+nix-functional-tests| Dependency nix-store found: YES 2.36.0 (overridden)
+nix-functional-tests| Dependency nix-expr found: YES 2.36.0 (overridden)
+nix-functional-tests| Library dl found: YES
+nix-functional-tests| Dependency nix-expr found: YES 2.36.0 (overridden)
+nix-functional-tests| Configuring common.sh using configuration
+nix-functional-tests| Build targets in project: 46
+nix-functional-tests| Subproject nix-functional-tests finished.
+
+
+Executing subproject json-schema-checks 
+
+json-schema-checks| Project name: nix-json-schema-checks
+json-schema-checks| Project version: 2.36.0
+json-schema-checks| Program jv found: YES (/nix/store/jcycwr3l2996dyavgf8f71hhnkxj75jg-jsonschema-0.7.0/bin/jv)
+json-schema-checks| Build targets in project: 46
+json-schema-checks| Subproject json-schema-checks finished.
+
+
+Executing subproject clang-tidy-plugin 
+
+clang-tidy-plugin| Project name: nix-clang-tidy-plugin
+clang-tidy-plugin| Project version: 2.36.0
+clang-tidy-plugin| C++ compiler for the host machine: g++ (gcc 15.2.0 "g++ (GCC) 15.2.0")
+clang-tidy-plugin| C++ linker for the host machine: g++ ld.mold 2.41.0
+clang-tidy-plugin| Dependency threads found: YES unknown (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wdeprecated-copy: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=suggest-override: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=switch: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=switch-enum: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=undef: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=unused-result: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=sign-compare: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=return-type: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=non-virtual-dtor: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wignored-qualifiers: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wimplicit-fallthrough: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wno-c23-extensions: NO (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wno-deprecated-declarations: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wno-interference-size: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Wno-subobject-linkage: YES (cached)
+clang-tidy-plugin| Compiler for C++ supports arguments -Werror=c99-designator: NO (cached)
+clang-tidy-plugin| Checking if "using libstdc++" compiles: YES (cached)
+clang-tidy-plugin| Checking if "linker can wrap __assert_fail" links: YES (cached)
+clang-tidy-plugin| Dependency LLVM found: YES 21.1.8 (cached)
+clang-tidy-plugin| Build targets in project: 47
+clang-tidy-plugin| Subproject clang-tidy-plugin finished.
+
+Program python3 found: YES (/nix/store/h3l4z7p6wny3phbckwwhy1i2g52pdnj4-python3-3.13.15/bin/python3)
+Program run-clang-tidy found: YES (/nix/store/404l8p1pmhk3k6wb9r6vjq6wzrj31mc7-clang-21.1.8/bin/run-clang-tidy)
+Dependency nix-clang-tidy found: YES 2.36.0 (overridden)
+Build targets in project: 50
+
+nix-store 2.36.0
+
+    can hardlink to symlink: YES
+
+Nix 2.36.0
+
+  Subprojects
+    clang-tidy-plugin              : YES
+    json-schema-checks             : YES
+    libcmd                         : YES
+    libexpr                        : YES
+    libexpr-c                      : YES
+    libexpr-test-support           : YES
+    libexpr-tests                  : YES
+    libfetchers                    : YES
+    libfetchers-c                  : YES
+    libfetchers-tests              : YES
+    libflake                       : YES
+    libflake-c                     : YES
+    libflake-tests                 : YES
+    libmain                        : YES
+    libmain-c                      : YES
+    libstore                       : YES
+    libstore-c                     : YES
+    libstore-test-support          : YES
+    libstore-tests                 : YES
+    libutil                        : YES
+    libutil-c                      : YES
+    libutil-test-support           : YES
+    libutil-tests                  : YES
+    nix                            : YES
+    nix-functional-tests           : YES 2 warnings
+    nswrapper                      : YES
+
+  User defined options
+    libutil:cpuid                  : enabled
+    libstore:embedded-sandbox-shell: false
+    libexpr:gc                     : enabled
+    json-schema-checks             : true
+    libcmd:markdown                : enabled
+    nix:mimalloc                   : enabled
+    libutil-c:plugin-c-api         : true
+    libstore-c:plugin-c-api        : true
+    libfetchers-c:plugin-c-api     : true
+    libexpr-c:plugin-c-api         : true
+    libflake-c:plugin-c-api        : true
+    libmain-c:plugin-c-api         : true
+    nix:plugin-c-api               : true
+    prefix                         : /home/osto/nix-gsoc/outputs/out
+    libcmd:readline-flavor         : editline
+    libstore:s3-aws-auth           : enabled
+    libstore:sandbox-shell         : /nix/store/wjn2kkmswxldfbqgjai4vf92wd9z1p2k-busybox-1.37.0/bin/busybox
+    libstore:seccomp-sandboxing    : enabled
+
+Found ninja-1.13.2 at /nix/store/r1r1ls8j4ca1vbsysajrq99qc1zgxn41-ninja-1.13.2/bin/ninja
+Running postconf script '/nix/store/h3l4z7p6wny3phbckwwhy1i2g52pdnj4-python3-3.13.15/bin/python3 /home/osto/nix-gsoc/nix-meson-build-support/common/clang-tidy/clean_compdb.py /home/osto/nix-gsoc/build/compile_commands.json /home/osto/nix-gsoc/build/nix-meson-build-support/common/clang-tidy/compile_commands.json'
+[1/44] Generating symbol file src/libutil-c/libnixutilc.so.2.36.0.p/libnixutilc.so.2.36.0.symbols
+[2/42] Generating symbol file src/libfetchers/libnixfetchers.so.2.36.0.p/libnixfetchers.so.2.36.0.symbols
+[3/41] Generating symbol file src/libstore-c/libnixstorec.so.2.36.0.p/libnixstorec.so.2.36.0.symbols
+[4/40] Generating symbol file src/libutil-test-support/libnix-util-test-support.so.2.36.0.p/libnix-util-test-support.so.2.36.0.symbols
+[5/38] Generating symbol file src/libfetchers-c/libnixfetchersc.so.2.36.0.p/libnixfetchersc.so.2.36.0.symbols
+[6/38] Generating symbol file src/libstore-test-support/libnix-store-test-support.so.2.36.0.p/libnix-store-test-support.so.2.36.0.symbols
+[7/36] Generating symbol file src/libexpr/libnixexpr.so.2.36.0.p/libnixexpr.so.2.36.0.symbols
+[8/33] Generating symbol file src/libmain/libnixmain.so.2.36.0.p/libnixmain.so.2.36.0.symbols
+[9/32] Generating symbol file src/libexpr-c/libnixexprc.so.2.36.0.p/libnixexprc.so.2.36.0.symbols
+[10/31] Generating symbol file src/libflake/libnixflake.so.2.36.0.p/libnixflake.so.2.36.0.symbols
+[11/29] Generating symbol file src/libexpr-test-support/libnix-expr-test-support.so.2.36.0.p/libnix-expr-test-support.so.2.36.0.symbols
+[12/28] Generating symbol file src/libflake-c/libnixflakec.so.2.36.0.p/libnixflakec.so.2.36.0.symbols
+[13/27] Generating symbol file src/libcmd/libnixcmd.so.2.36.0.p/libnixcmd.so.2.36.0.symbols

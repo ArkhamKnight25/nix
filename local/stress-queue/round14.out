@@ -1,0 +1,10 @@
+1/5 main - nix-functional-tests:build-hook-shared           OK               1.14s
+2/5 main - nix-functional-tests:build-hook-async            OK               1.97s
+3/5 main - nix-functional-tests:build-hook-interrupt-reply  OK               2.15s
+4/5 main - nix-functional-tests:build-hook-interrupt-queued OK               4.19s
+5/5 main - nix-functional-tests:build-hook-postpone         OK              16.31s
+
+Ok:                5   
+Fail:              0   
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt

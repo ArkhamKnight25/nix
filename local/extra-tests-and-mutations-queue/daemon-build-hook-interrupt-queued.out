@@ -1,0 +1,6 @@
+1/1 main - nix-functional-tests:build-hook-interrupt-queued OK               4.38s
+
+Ok:                1   
+Fail:              0   
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt

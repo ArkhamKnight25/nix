@@ -1,0 +1,1 @@
+no-queue|build-hook-postpone build-hook-interrupt-queued|s/^    while (worker.hookBusy) {$/    while (false \&\& worker.hookBusy) {/
