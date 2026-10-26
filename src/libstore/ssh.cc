@@ -232,13 +232,13 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
     // Wait for the SSH connection to be established,
     // So that we don't overwrite the password prompt with our progress bar.
     if (!fakeSSH && !useMaster && !isMasterRunning()) {
-        if (!awaitStarted)
-            /* The caller reads it, without blocking its thread. The
-               logger stays suspended only until we return, so a
-               password prompt may still collide with the progress
-               bar; the caller knows that. */
+        if (!awaitStarted) {
+            /* The caller reads it, without blocking its thread, and
+               holds the suspension meanwhile; see
+               `Connection::loggerSuspension`. */
             conn->startedLinePending = true;
-        else {
+            conn->loggerSuspension = std::move(loggerSuspension);
+        } else {
             std::string reply;
             try {
                 reply = readLine(out.readSide.get());

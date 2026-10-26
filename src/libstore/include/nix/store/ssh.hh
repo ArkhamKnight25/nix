@@ -6,6 +6,7 @@
 #include "nix/util/url.hh"
 #include "nix/util/processes.hh"
 #include "nix/util/file-system.hh"
+#include "nix/util/logging.hh"
 
 namespace nix {
 
@@ -87,6 +88,16 @@ public:
          * there.
          */
         bool startedLinePending = false;
+
+        /**
+         * Set with `startedLinePending`: the logger's suspension that
+         * `startCommand` would have held across its own wait for the
+         * `started` line. The caller keeps it until it has read that
+         * line (or failed to), so that the progress bar does not draw
+         * over what ssh prints while connecting, and drops it then.
+         * Destroying the connection drops it too.
+         */
+        std::unique_ptr<Logger::Suspension> loggerSuspension;
 
         /**
          * Try to set the buffer size in both directions to the

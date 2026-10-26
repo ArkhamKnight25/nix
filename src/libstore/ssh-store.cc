@@ -341,6 +341,8 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
             reply = conn->from.readLine(/*eofOk=*/true);
         } catch (EndOfFile &) {
         }
+        /* ssh has connected or given up; the logger may draw again. */
+        conn->sshConn->loggerSuspension.reset();
         if (reply != "started") {
             printTalkative("SSH stdout first line: %s", reply);
             throw Error("failed to start SSH connection to '%s'", config->getHumanReadableURI());
