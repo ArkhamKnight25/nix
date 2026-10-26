@@ -12,8 +12,10 @@ What changes for the user:
 - A builder that cannot be reached is disabled for the rest of the invocation, as the hook disabled it for its own lifetime.
 - The `ssh` child of a remote build is terminated with `SIGTERM` and given ten seconds before `SIGKILL`, so a build interrupted here is stopped on the remote machine too.
 - [`max-log-size`](@docroot@/command-ref/conf-file.md#conf-max-log-size) applies to remote builds as it does to local ones.
+  The log of a legacy `ssh://` builder, which arrives on `ssh`'s standard error, is collected by a thread of the building process into the same log file.
 - `ssh` runs with `-oBatchMode=yes` for these connections: it fails rather than prompts.
   A builder's key must not need a passphrase, or must be in an agent, as the manual already asks; the hook could never prompt either.
 
 A program named by `build-hook` is still run, with the same protocol.
-It is now consulted for one derivation at a time, and its reply is awaited without stopping the other builds; `decline-permanently` still stops Nix from consulting it again for the rest of the invocation.
+While it chose a machine and connected to it, Nix could not start a local build or notice one finishing; its reply is now awaited while the other builds proceed.
+It is consulted for one derivation at a time, and `decline-permanently` still stops Nix from consulting it again for the rest of the invocation.
