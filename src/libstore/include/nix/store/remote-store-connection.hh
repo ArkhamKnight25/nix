@@ -21,8 +21,13 @@ namespace nix {
  */
 struct RemoteStore::ConnectionStreams
 {
-    std::unique_ptr<BufferedSink> to;
-    std::unique_ptr<BufferedSource> from;
+    /**
+     * Named apart from `BasicConnection::to`/`from`, the references
+     * that the protocol code uses, so that an unqualified `to` in a
+     * `Connection` can only mean the reference.
+     */
+    std::unique_ptr<BufferedSink> ownedTo;
+    std::unique_ptr<BufferedSource> ownedFrom;
 };
 
 /**
@@ -44,15 +49,9 @@ private:
 public:
     Connection(std::unique_ptr<BufferedSink> to, std::unique_ptr<BufferedSource> from)
         : ConnectionStreams{std::move(to), std::move(from)}
-        , BasicClientConnection(*ConnectionStreams::to, *ConnectionStreams::from)
+        , BasicClientConnection(*ownedTo, *ownedFrom)
     {
     }
-
-    /**
-     * The protocol streams; the owning pointers are in `ConnectionStreams`.
-     */
-    using BasicClientConnection::from;
-    using BasicClientConnection::to;
 
     /**
      * The descriptor behind `from`, or `INVALID_DESCRIPTOR` when the

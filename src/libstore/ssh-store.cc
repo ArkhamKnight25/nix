@@ -132,7 +132,7 @@ protected:
                   std::make_unique<AsyncFdSink>(async.ctx, async.yield, std::move(sshConn->in)),
                   daemonSource(async, std::move(sshConn->out)))
             , sshConn(std::move(sshConn))
-            , asyncSink(static_cast<AsyncFdSink *>(ConnectionStreams::to.get()))
+            , asyncSink(static_cast<AsyncFdSink *>(ownedTo.get()))
         {
         }
 

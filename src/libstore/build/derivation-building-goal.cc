@@ -1353,7 +1353,7 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
                              && (neededSystem == settings.thisSystem.get()
                                  || settings.extraPlatforms.get().count(neededSystem) > 0)
                              && std::ranges::all_of(requiredFeatures, [&](const std::string & feature) {
-                                    return worker.store.config.systemFeatures.get().count(feature);
+                                    return worker.store.config.systemFeatures.get().count(feature) != 0;
                                 });
     bool canBuildLocally = worker.getNrLocalBuilds() < maxBuildJobs && couldBuildLocally;
 
@@ -1578,8 +1578,11 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
 
     asio::spawn(
         worker.ioContext,
-        [&store = worker.store, &machines = worker.remoteMachines(), &ctx = worker.ioContext, request, machine = std::move(machine)](
-            asio::yield_context yield) mutable -> RemoteMachineBuildOutcome {
+        [&store = worker.store,
+         &machines = worker.remoteMachines(),
+         &ctx = worker.ioContext,
+         request,
+         machine = std::move(machine)](asio::yield_context yield) mutable -> RemoteMachineBuildOutcome {
             return buildOnRemoteMachine(store, machines, std::move(machine), *request, ctx, yield);
         },
         asio::bind_cancellation_slot(
