@@ -73,4 +73,52 @@ TEST_F(AsyncFdTest, writeToInvalidFd)
     EXPECT_THROW(write.get(), SystemError);
 }
 
+/* The two tests below are skeletons: written against the headers, not
+   yet run. */
+
+TEST_F(AsyncFdTest, eofThrowsEndOfFile)
+{
+    Pipe pipe;
+    pipe.create();
+    pipe.writeSide.close();
+
+    auto read = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            source.endOfFileError = "the other side went away";
+            char c;
+            /* `Source::operator()` would spin on a zero-length read. */
+            source(&c, 1);
+        },
+        asio::use_future);
+
+    ctx.run();
+    EXPECT_THROW(read.get(), EndOfFile);
+}
+
+TEST_F(AsyncFdTest, hasDataProbesTheDescriptorThroughTheBase)
+{
+    Pipe pipe;
+    pipe.create();
+
+    auto probe = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            /* As `processStderr` sees it. */
+            BufferedSource & base = source;
+            bool before = base.hasData();
+            writeFull(pipe.writeSide.get(), "x");
+            bool after = base.hasData();
+            return std::pair{before, after};
+        },
+        asio::use_future);
+
+    ctx.run();
+    auto [before, after] = probe.get();
+    EXPECT_FALSE(before);
+    EXPECT_TRUE(after);
+}
+
 } // namespace nix
