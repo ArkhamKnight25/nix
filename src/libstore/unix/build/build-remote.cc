@@ -48,11 +48,6 @@ void serveBuildHook(
     auto machines = Machine::parseConfig({settings.thisSystem}, settings.getWorkerSettings().builders);
     debug("got %d remote builders", machines.size());
 
-    if (machines.empty()) {
-        reply(toParent, "# decline-permanently");
-        return;
-    }
-
     std::optional<StorePath> drvPath;
     std::string storeUri;
 
@@ -70,6 +65,13 @@ void serveBuildHook(
         auto neededSystem = readString(from);
         drvPath = store->parseStorePath(readString(from));
         auto requiredFeatures = readStrings<StringSet>(from);
+
+        /* Read the request first, or the parent's write can fail with
+           EPIPE. */
+        if (machines.empty()) {
+            reply(toParent, "# decline-permanently");
+            return;
+        }
 
         /* It would be possible to build locally after some builds clear out,
            so don't show the warning now: */
@@ -92,33 +94,10 @@ void serveBuildHook(
                 if (*noMachine == NoMachine::AllBusy && !canBuildLocally)
                     reply(toParent, "# postpone");
                 else {
-                    // build the hint template.
-                    std::string errorText =
-                        "Failed to find a machine for remote build!\n"
-                        "derivation: %s\nrequired (system, features): (%s, [%s])";
-                    errorText += "\n%s available machines:";
-                    errorText += "\n(systems, maxjobs, supportedFeatures, mandatoryFeatures)";
-
-                    for (unsigned int i = 0; i < machines.size(); ++i)
-                        errorText += "\n([%s], %s, [%s], [%s])";
-
-                    // add the template values.
-                    std::string drvstr;
-                    if (drvPath.has_value())
-                        drvstr = drvPath->to_string();
-                    else
-                        drvstr = "<unknown>";
-
-                    auto error = HintFmt::fromFormatString(errorText);
-                    error % drvstr % neededSystem % concatStringsSep<StringSet>(", ", requiredFeatures)
-                        % machines.size();
-
-                    for (auto & m : machines)
-                        error % concatStringsSep<StringSet>(", ", m.systemTypes) % m.maxJobs
-                            % concatStringsSep<StringSet>(", ", m.supportedFeatures)
-                            % concatStringsSep<StringSet>(", ", m.mandatoryFeatures);
-
-                    printMsg(couldBuildLocally ? lvlChatty : lvlWarn, error.str());
+                    printMsg(
+                        couldBuildLocally ? lvlChatty : lvlWarn,
+                        noMachineAvailableMessage(
+                            machines, drvPath ? drvPath->to_string() : "<unknown>", neededSystem, requiredFeatures));
 
                     reply(toParent, "# decline");
                 }
@@ -292,7 +271,7 @@ connected:
         Activity act(*logger, lvlTalkative, actUnknown, fmt("copying outputs from '%s'", storeUri));
         if (auto localStore = store.dynamic_pointer_cast<LocalStore>())
             for (auto & path : missingPaths)
-                localStore->locksHeld.insert(store->printStorePath(path)); /* FIXME: ugly */
+                localStore->locksHeld.lock()->insert(store->printStorePath(path)); /* FIXME: ugly */
         copyPaths(*sshStore, *store, missingPaths, NoRepair, NoCheckSigs, NoSubstitute);
     }
     // XXX: Should be done as part of `copyPaths`
