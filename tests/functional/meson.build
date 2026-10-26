@@ -70,6 +70,7 @@ suites = [
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
       'build-remote-inprocess-multi-output.sh',
+      'build-remote-inprocess.sh',
       'build-remote-input-addressed.sh',
       'build-remote-trustless-should-fail-0.sh',
       'build-remote-trustless-should-pass-0.sh',
