@@ -43,6 +43,8 @@ WorkerProto::BasicClientConnection::processStderrReturn(Sink * sink, Source * so
 
     std::exception_ptr ex;
 
+    auto & msgLogger = messageLogger ? *messageLogger : *logger;
+
     while (true) {
 
         if (!block && !from.hasData())
@@ -78,7 +80,7 @@ WorkerProto::BasicClientConnection::processStderrReturn(Sink * sink, Source * so
         }
 
         else if (msg == STDERR_NEXT)
-            messageLogger->log(lvlError, chomp(readString(from)));
+            msgLogger.log(lvlError, chomp(readString(from)));
 
         else if (msg == STDERR_START_ACTIVITY) {
             auto act = readNum<ActivityId>(from);
@@ -87,19 +89,19 @@ WorkerProto::BasicClientConnection::processStderrReturn(Sink * sink, Source * so
             auto s = readString(from);
             auto fields = readFields(from);
             auto parent = readNum<ActivityId>(from);
-            messageLogger->startActivity(act, lvl, type, s, fields, parent);
+            msgLogger.startActivity(act, lvl, type, s, fields, parent);
         }
 
         else if (msg == STDERR_STOP_ACTIVITY) {
             auto act = readNum<ActivityId>(from);
-            messageLogger->stopActivity(act);
+            msgLogger.stopActivity(act);
         }
 
         else if (msg == STDERR_RESULT) {
             auto act = readNum<ActivityId>(from);
             auto type = (ResultType) readInt(from);
             auto fields = readFields(from);
-            messageLogger->result(act, type, fields);
+            msgLogger.result(act, type, fields);
         }
 
         else if (msg == STDERR_LAST) {

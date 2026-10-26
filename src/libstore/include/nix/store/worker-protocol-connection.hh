@@ -75,11 +75,12 @@ struct WorkerProto::BasicClientConnection : WorkerProto::BasicConnection
 
     /**
      * Where the daemon's log messages, activities and results go when
-     * `processStderr` reads them: the process's `logger` unless the
-     * connection's owner wants to see them pass, as the in-process
-     * remote builder does to write the build's log file.
+     * `processStderr` reads them: the process's `logger`, looked up at
+     * that moment (it may be replaced after this connection is made),
+     * unless the connection's owner wants to see them pass, as the
+     * in-process remote builder does to write the build's log file.
      */
-    Logger * messageLogger = logger;
+    Logger * messageLogger = nullptr;
 
     /**
      * Flush to direction
