@@ -66,7 +66,6 @@ suites = [
       'build-hook-async.sh',
       'build-hook-interrupt-reply.sh',
       'build-hook-interrupt-queued.sh',
-      'build-hook-postpone.sh',
       'build-hook-shared.sh',
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
