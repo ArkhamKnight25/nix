@@ -11,6 +11,10 @@
 #include "nix/store/build-result.hh"
 #include "nix/store/tests/protocol.hh"
 #include "nix/util/tests/characterization.hh"
+#ifndef _WIN32
+#  include "nix/util/serialise-async.hh"
+#  include <boost/asio/use_future.hpp>
+#endif
 
 namespace nix {
 
@@ -1004,6 +1008,45 @@ TEST_F(WorkerProtoTest, handshake_client_truncated_replay_throws)
         }
     });
 }
+
+#ifndef _WIN32
+/**
+ * The client side of the handshake over `AsyncFdSink`/`AsyncFdSource`
+ * inside a stackful coroutine, against the server side on blocking
+ * streams in a thread: the shape `SSHStoreConfig::openStoreAsync`
+ * relies on. Skeleton: not yet run anywhere.
+ */
+TEST_F(WorkerProtoTest, handshake_over_async_streams)
+{
+    Pipe toClient, toServer;
+    toClient.create();
+    toServer.create();
+
+    asio::io_context ctx;
+    auto clientResult = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSink out(ctx, yield, std::move(toServer.writeSide));
+            AsyncFdSource in(ctx, yield, std::move(toClient.readSide));
+            auto version = WorkerProto::BasicClientConnection::handshake(out, in, defaultVersion);
+            out.flush();
+            return version;
+        },
+        asio::use_future);
+
+    std::thread server([&]() {
+        FdSink out{toClient.writeSide.get()};
+        FdSource in{toServer.readSide.get()};
+        WorkerProto::BasicServerConnection::handshake(out, in, defaultVersion);
+        out.flush();
+    });
+
+    ctx.run();
+    server.join();
+
+    EXPECT_EQ(clientResult.get(), defaultVersion);
+}
+#endif
 
 TEST_F(WorkerProtoTest, handshake_client_corrupted_throws)
 {
