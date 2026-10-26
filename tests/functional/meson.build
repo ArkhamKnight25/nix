@@ -69,6 +69,7 @@ suites = [
       'build-hook-shared.sh',
       'build-remote-content-addressed-fixed.sh',
       'build-remote-content-addressed-floating.sh',
+      'build-remote-inprocess-concurrent.sh',
       'build-remote-inprocess-multi-output.sh',
       'build-remote-inprocess.sh',
       'build-remote-input-addressed.sh',
