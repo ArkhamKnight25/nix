@@ -18,6 +18,7 @@
 
 #ifndef _WIN32
 #  include <boost/asio/posix/stream_descriptor.hpp>
+#  include <fcntl.h>
 #endif
 
 namespace nix {
@@ -479,15 +480,32 @@ void Worker::waitForInput()
        Registering and releasing the children's descriptors on every
        wait costs a reactor call each; keeping a `stream_descriptor` per
        `Child` would avoid that, at the price of threading it through
-       `childStarted`. Note that asio puts a watched descriptor into
-       non-blocking mode and leaves it there, which `iterate` does not
-       mind (it reads only after readiness), but any blocking read on one
-       of these descriptors elsewhere would now see `EAGAIN`. */
+       `childStarted`.
+
+       asio sets `O_NONBLOCK` on a descriptor when it starts the first
+       operation on it, and `release()` only hands the descriptor back
+       (`reactive_descriptor_service::release` deregisters it from the
+       reactor and nothing more), so without help every child pipe would
+       stay non-blocking for good. `iterate` reads only after readiness,
+       but it treats `EAGAIN` as a failed read, and a `readLine` or
+       `drainFD` on one of these descriptors elsewhere must keep
+       blocking as it always did. Remember each descriptor's flags and
+       put them back once asio has let go. */
     {
-        std::list<asio::posix::stream_descriptor> watched;
+        struct Watched
+        {
+            asio::posix::stream_descriptor descriptor;
+            Descriptor fd;
+            int flags;
+        };
+
+        std::list<Watched> watched;
         for (auto & entry : state.pollStatus) {
-            watched.emplace_back(ioContext, entry.fd);
-            watched.back().async_wait(
+            int flags = fcntl(entry.fd, F_GETFL);
+            if (flags == -1)
+                throw SysError("getting the flags of descriptor %d", entry.fd);
+            watched.push_back(Watched{asio::posix::stream_descriptor(ioContext, entry.fd), entry.fd, flags});
+            watched.back().descriptor.async_wait(
                 asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
         }
 
@@ -500,9 +518,12 @@ void Worker::waitForInput()
            includes resuming coroutines whose I/O completed. */
         ioContext.poll();
 
-        for (auto & descriptor : watched) {
-            descriptor.cancel();
-            descriptor.release();
+        for (auto & w : watched) {
+            w.descriptor.cancel();
+            w.descriptor.release();
+            /* The wake-up pipe is non-blocking by design and keeps it. */
+            if (!(w.flags & O_NONBLOCK) && fcntl(w.fd, F_SETFL, w.flags) == -1)
+                throw SysError("restoring the flags of descriptor %d", w.fd);
         }
         /* The cancelled waits post their (empty) handlers; drain them so
            they do not count as work on the next wait. */
