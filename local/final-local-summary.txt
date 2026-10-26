@@ -1,0 +1,30 @@
+== async-hook-pool @ a0c8f6d4a
+clang-format: clean
+[01:02:01] ninja
+[01:08:30] ninja OK
+1/2 libstore-tests:nix-store-tests OK              4.14s
+2/2 libutil-tests:nix-util-tests   OK             10.46s
+  plain: 17 hook tests run, failures: none
+  daemon build-hook-builtin-ssh-root: SKIP
+  daemon: 17 hook tests run, failures: none
+[01:12:09] full meson suite
+Ok:                311 
+Fail:              0   
+Skipped:           7   
+[01:15:25] done
+tree: 0 changes
+== async-hook-queue @ 04bf0adb0
+clang-format: clean
+[01:15:43] ninja
+[01:22:14] ninja OK
+1/2 libstore-tests:nix-store-tests OK              4.23s
+2/2 libutil-tests:nix-util-tests   OK             10.50s
+  plain: 17 hook tests run, failures: none
+  daemon build-hook-builtin-ssh-root: SKIP
+  daemon: 17 hook tests run, failures: none
+[01:25:33] full meson suite
+Ok:                311 
+Fail:              0   
+Skipped:           7   
+[01:28:48] done
+tree: 0 changes

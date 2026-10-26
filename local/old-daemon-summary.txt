@@ -1,0 +1,17 @@
+daemon latest: /nix/store/qg27sciniq3944fammxn1hr6m1rqy1bi-nix-2.35.2 (nix (Nix) 2.35.2)
+daemon stable: /nix/store/wknkybkzrc16r11vk5vrykh4wmw7a353-nix-2.34.8 (nix (Nix) 2.34.8)
+== async-hook-queue @ a7f96e94f
+[01:42:13] ninja
+[01:48:28] ninja OK
+  against nix (Nix) 2.35.2: Ok: 206  Fail: 0  Skipped: 34  
+    hook tests: build-hook-async=SKIP build-hook-builtin-error=OK build-hook-builtin-interrupt=OK build-hook-builtin-ssh-root=SKIP build-hook-builtin-ssh=OK build-hook-builtin=SKIP build-hook-configured=OK build-hook-interrupt-queued=OK build-hook-interrupt-reply=OK build-hook-postpone=SKIP build-hook-program=OK build-hook-shared=SKIP build-remote-content-addressed-fixed=OK build-remote-content-addressed-floating=OK build-remote-input-addressed=OK build-remote-trustless-should-fail-0=OK build-remote-trustless-should-pass-0=OK build-remote-trustless-should-pass-1=OK build-remote-trustless-should-pass-2=OK build-remote-trustless-should-pass-3=OK build-remote-with-mounted-ssh-ng=OK 
+  against nix (Nix) 2.34.8: Ok: 177  Fail: 0  Skipped: 63  
+    hook tests: build-hook-async=SKIP build-hook-builtin-error=OK build-hook-builtin-interrupt=OK build-hook-builtin-ssh-root=SKIP build-hook-builtin-ssh=OK build-hook-builtin=SKIP build-hook-configured=OK build-hook-interrupt-queued=OK build-hook-interrupt-reply=OK build-hook-postpone=SKIP build-hook-program=OK build-hook-shared=SKIP build-remote-content-addressed-fixed=OK build-remote-content-addressed-floating=OK build-remote-input-addressed=OK build-remote-trustless-should-fail-0=OK build-remote-trustless-should-pass-0=OK build-remote-trustless-should-pass-1=OK build-remote-trustless-should-pass-2=OK build-remote-trustless-should-pass-3=OK build-remote-with-mounted-ssh-ng=OK 
+== async-hook-pool @ 33a20a8e3
+[01:54:51] ninja
+[02:01:23] ninja OK
+  against nix (Nix) 2.35.2: Ok: 206  Fail: 0  Skipped: 34  
+    hook tests: build-hook-async=SKIP build-hook-builtin-error=OK build-hook-builtin-interrupt=OK build-hook-builtin-ssh-root=SKIP build-hook-builtin-ssh=OK build-hook-builtin=SKIP build-hook-configured=OK build-hook-interrupt-queued=OK build-hook-interrupt-reply=OK build-hook-pool=SKIP build-hook-postpone=SKIP build-hook-program=OK build-remote-content-addressed-fixed=OK build-remote-content-addressed-floating=OK build-remote-input-addressed=OK build-remote-trustless-should-fail-0=OK build-remote-trustless-should-pass-0=OK build-remote-trustless-should-pass-1=OK build-remote-trustless-should-pass-2=OK build-remote-trustless-should-pass-3=OK build-remote-with-mounted-ssh-ng=OK 
+  against nix (Nix) 2.34.8: Ok: 177  Fail: 0  Skipped: 63  
+    hook tests: build-hook-async=SKIP build-hook-builtin-error=OK build-hook-builtin-interrupt=OK build-hook-builtin-ssh-root=SKIP build-hook-builtin-ssh=OK build-hook-builtin=SKIP build-hook-configured=OK build-hook-interrupt-queued=OK build-hook-interrupt-reply=OK build-hook-pool=SKIP build-hook-postpone=SKIP build-hook-program=OK build-remote-content-addressed-fixed=OK build-remote-content-addressed-floating=OK build-remote-input-addressed=OK build-remote-trustless-should-fail-0=OK build-remote-trustless-should-pass-0=OK build-remote-trustless-should-pass-1=OK build-remote-trustless-should-pass-2=OK build-remote-trustless-should-pass-3=OK build-remote-with-mounted-ssh-ng=OK 
+tree: 0 changes, on async-hook-pool

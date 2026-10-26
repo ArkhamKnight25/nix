@@ -1,0 +1,55 @@
+ninja: Entering directory `build'
+[1/43] Compiling C++ object src/libstore/libnixstore.so.2.36.0.p/build_derivation-building-goal.cc.o
+In file included from /nix/store/6hjng4hd5c688hjgdcyb1rzfjz220srh-gcc-15.2.0/include/c++/15.2.0/x86_64-unknown-linux-gnu/bits/os_defines.h:39,
+                 from /nix/store/6hjng4hd5c688hjgdcyb1rzfjz220srh-gcc-15.2.0/include/c++/15.2.0/x86_64-unknown-linux-gnu/bits/c++config.h:727,
+                 from /nix/store/6hjng4hd5c688hjgdcyb1rzfjz220srh-gcc-15.2.0/include/c++/15.2.0/bits/version.h:51,
+                 from /nix/store/6hjng4hd5c688hjgdcyb1rzfjz220srh-gcc-15.2.0/include/c++/15.2.0/string_view:46,
+                 from ../src/libstore/include/nix/store/path.hh:4,
+                 from ../src/libstore/include/nix/store/derivations.hh:4,
+                 from ../src/libstore/include/nix/store/build/derivation-building-goal.hh:4,
+                 from ../src/libstore/build/derivation-building-goal.cc:1:
+/nix/store/rlrznkmvs6jyp5kgq5jv2wqam83jv1r7-glibc-2.42-84-dev/include/features.h:435:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
+  435 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+      |    ^~~~~~~
+[2/43] Linking target src/libstore/libnixstore.so.2.36.0
+[3/43] Generating symbol file src/libstore/libnixstore.so.2.36.0.p/libnixstore.so.2.36.0.symbols
+[4/43] Linking target src/libstore-c/libnixstorec.so.2.36.0
+[5/43] Linking target src/libfetchers/libnixfetchers.so.2.36.0
+[6/43] Generating symbol file src/libstore-c/libnixstorec.so.2.36.0.p/libnixstorec.so.2.36.0.symbols
+[7/43] Generating symbol file src/libfetchers/libnixfetchers.so.2.36.0.p/libnixfetchers.so.2.36.0.symbols
+[8/43] Linking target src/libfetchers-c/libnixfetchersc.so.2.36.0
+[9/43] Linking target src/libstore-test-support/libnix-store-test-support.so.2.36.0
+[10/43] Generating symbol file src/libfetchers-c/libnixfetchersc.so.2.36.0.p/libnixfetchersc.so.2.36.0.symbols
+[11/43] Generating symbol file src/libstore-test-support/libnix-store-test-support.so.2.36.0.p/libnix-store-test-support.so.2.36.0.symbols
+[12/43] Linking target src/libexpr/libnixexpr.so.2.36.0
+[13/43] Generating symbol file src/libexpr/libnixexpr.so.2.36.0.p/libnixexpr.so.2.36.0.symbols
+[14/43] Linking target src/libfetchers-tests/nix-fetchers-tests
+[15/43] Linking target src/libstore-tests/nix-store-tests
+[16/43] Linking target src/libmain/libnixmain.so.2.36.0
+[17/43] Linking target src/libexpr-c/libnixexprc.so.2.36.0
+[18/43] Linking target src/libflake/libnixflake.so.2.36.0
+[19/43] Generating symbol file src/libmain/libnixmain.so.2.36.0.p/libnixmain.so.2.36.0.symbols
+[20/43] Generating symbol file src/libexpr-c/libnixexprc.so.2.36.0.p/libnixexprc.so.2.36.0.symbols
+[21/43] Generating symbol file src/libflake/libnixflake.so.2.36.0.p/libnixflake.so.2.36.0.symbols
+[22/43] Linking target src/libmain-c/libnixmainc.so.2.36.0
+[23/43] Linking target src/libexpr-test-support/libnix-expr-test-support.so.2.36.0
+[24/43] Linking target src/libflake-c/libnixflakec.so.2.36.0
+[25/43] Linking target src/libcmd/libnixcmd.so.2.36.0
+[26/43] Generating symbol file src/libexpr-test-support/libnix-expr-test-support.so.2.36.0.p/libnix-expr-test-support.so.2.36.0.symbols
+[27/43] Generating symbol file src/libflake-c/libnixflakec.so.2.36.0.p/libnixflakec.so.2.36.0.symbols
+[28/43] Generating symbol file src/libcmd/libnixcmd.so.2.36.0.p/libnixcmd.so.2.36.0.symbols
+[29/43] Linking target src/libflake-tests/nix-flake-tests
+[30/43] Linking target src/libexpr-tests/nix-expr-tests
+[31/43] Linking target src/nix/nix
+[32/43] Generating src/nix/nix-channel with a custom command (wrapped by meson to set env)
+[33/43] Generating src/nix/nix-build with a custom command (wrapped by meson to set env)
+[34/43] Generating src/nix/nix-collect-garbage with a custom command (wrapped by meson to set env)
+[35/43] Generating src/nix/nix-copy-closure with a custom command (wrapped by meson to set env)
+[36/43] Generating src/nix/nix-daemon with a custom command (wrapped by meson to set env)
+[37/43] Generating src/nix/nix-env with a custom command (wrapped by meson to set env)
+[38/43] Generating src/nix/nix-hash with a custom command (wrapped by meson to set env)
+[39/43] Generating src/nix/nix-instantiate with a custom command (wrapped by meson to set env)
+[40/43] Generating src/nix/nix-prefetch-url with a custom command (wrapped by meson to set env)
+[41/43] Generating src/nix/nix-store with a custom command (wrapped by meson to set env)
+[42/43] Generating src/nix/nix-shell with a custom command (wrapped by meson to set env)
+[43/43] Generating src/nix/build-remote with a custom command (wrapped by meson to set env)

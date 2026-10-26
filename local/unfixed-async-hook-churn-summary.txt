@@ -1,0 +1,8 @@
+== async-hook @ d0aa0c58d (temporary tests, not committed)
+[23:39:44] ninja
+[23:40:41] ninja OK
+  run1 build-hook-postpone: FAIL  accepts=5 postpones=23 starts=18 [test failed: started 18 hooks for 5 builds']
+  run1 build-hook-interrupt-queued: FAIL   [test failed: the second goal did not wait for the hook']
+  run2 build-hook-postpone: FAIL  accepts=5 postpones=23 starts=18 [test failed: started 18 hooks for 5 builds']
+  run2 build-hook-interrupt-queued: FAIL   [test failed: the second goal did not wait for the hook']
+tree after: 0 changes

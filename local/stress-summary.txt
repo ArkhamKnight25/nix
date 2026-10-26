@@ -1,0 +1,62 @@
+== async-hook-pool @ fd5af49c8
+[23:53:07] ninja
+[23:53:07] ninja OK
+  round 1: 5 ok  (23:53:24)
+  round 2: 5 ok  (23:53:39)
+  round 3: 5 ok  (23:53:55)
+  round 4: 5 ok  (23:54:10)
+  round 5: 5 ok  (23:54:27)
+  round 6: 5 ok  (23:54:41)
+  round 7: 5 ok  (23:54:59)
+  round 8: 5 ok  (23:55:14)
+  round 9: 5 ok  (23:55:31)
+  round 10: 5 ok  (23:55:47)
+  round 11: 5 ok  (23:56:04)
+  round 12: 5 ok  (23:56:19)
+  round 13: 5 ok  (23:56:36)
+  round 14: 5 ok  (23:56:52)
+  round 15: 5 ok  (23:57:07)
+  round 16: 5 ok  (23:57:21)
+  round 17: 5 ok  (23:57:37)
+  round 18: 5 ok  (23:57:53)
+  round 19: 5 ok  (23:58:10)
+  round 20: 5 ok  (23:58:25)
+--- totals over 20 rounds
+  build-hook-async               OK=20 FAIL=0 TIMEOUT=0
+  build-hook-pool                OK=20 FAIL=0 TIMEOUT=0
+  build-hook-postpone            OK=20 FAIL=0 TIMEOUT=0
+  build-hook-interrupt-queued    OK=20 FAIL=0 TIMEOUT=0
+  build-hook-interrupt-reply     OK=20 FAIL=0 TIMEOUT=0
+--- postpone counts (accepts/postpones/starts: rounds)
+     20 accepts=5 postpones=* starts=5
+== async-hook-queue @ 35a10da78
+[23:58:36] ninja
+[00:05:31] ninja OK
+  round 1: 5 ok  (00:05:49)
+  round 2: 5 ok  (00:06:05)
+  round 3: 5 ok  (00:06:22)
+  round 4: 5 ok  (00:06:38)
+  round 5: 5 ok  (00:06:55)
+  round 6: 5 ok  (00:07:11)
+  round 7: 5 ok  (00:07:29)
+  round 8: 5 ok  (00:07:44)
+  round 9: 5 ok  (00:08:00)
+  round 10: 5 ok  (00:08:17)
+  round 11: 5 ok  (00:08:33)
+  round 12: 5 ok  (00:08:50)
+  round 13: 5 ok  (00:09:06)
+  round 14: 5 ok  (00:09:23)
+  round 15: 5 ok  (00:09:39)
+  round 16: 5 ok  (00:09:56)
+  round 17: 5 ok  (00:10:12)
+  round 18: 5 ok  (00:10:29)
+  round 19: 5 ok  (00:10:45)
+  round 20: 5 ok  (00:11:02)
+--- totals over 20 rounds
+  build-hook-async               OK=20 FAIL=0 TIMEOUT=0
+  build-hook-shared              OK=20 FAIL=0 TIMEOUT=0
+  build-hook-postpone            OK=20 FAIL=0 TIMEOUT=0
+  build-hook-interrupt-queued    OK=20 FAIL=0 TIMEOUT=0
+  build-hook-interrupt-reply     OK=20 FAIL=0 TIMEOUT=0
+--- postpone counts (accepts/postpones/starts: rounds)
+     20 accepts=5 postpones=* starts=5

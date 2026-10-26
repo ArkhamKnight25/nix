@@ -1,0 +1,2 @@
+no-cap|build-hook-interrupt-queued build-hook-pool|s/^    while (worker.idleHooks.empty() .. worker.nrBusyHooks >= maxHooks) {$/    while (false \&\& worker.nrBusyHooks >= maxHooks) {/
+no-reuse|build-hook-postpone|s/^        worker.idleHooks.push_back(std::move(hook));$/        hook.reset();/

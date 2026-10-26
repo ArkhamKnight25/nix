@@ -1,0 +1,8 @@
+1/1 main - nix-functional-tests:build-hook-interrupt-queued FAIL             2.89s   exit status 1
+>>> MSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1 _NIX_TEST_SOURCE_DIR=/home/osto/nix-gsoc/src/nix-functional-tests ASAN_OPTIONS=abort_on_error=1:print_summary=1:detect_leaks=0:log_path=/home/osto/nix-gsoc/build/src/nix-functional-tests/asan-log MESON_TEST_ITERATION=1 TEST_NAME=build-hook-interrupt-queued LD_LIBRARY_PATH=/home/osto/nix-gsoc/build/src/libcmd:/home/osto/nix-gsoc/build/src/libstore-c:/home/osto/nix-gsoc/build/src/libfetchers-c:/home/osto/nix-gsoc/build/src/libmain:/home/osto/nix-gsoc/build/src/libflake:/home/osto/nix-gsoc/build/src/libexpr-c:/home/osto/nix-gsoc/build/src/libutil-c:/home/osto/nix-gsoc/build/src/libexpr:/home/osto/nix-gsoc/build/src/libfetchers:/home/osto/nix-gsoc/build/src/libstore:/home/osto/nix-gsoc/build/src/libutil NIX_REMOTE='' PS4='+(${BASH_SOURCE[0]-$0}:$LINENO) ' MALLOC_PERTURB_=107 _NIX_TEST_BUILD_DIR=/home/osto/nix-gsoc/build/src/nix-functional-tests TEST_SUITE_NAME=main UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_summary=1:print_stacktrace=1 /nix/store/axl12yr00f105bjqvj628f5f0s6r0cnp-bash-5.3p9/bin/bash -x -e -u -o pipefail build-hook-interrupt-queued.sh
+
+
+Ok:                0   
+Fail:              1   
+
+Full log written to /home/osto/nix-gsoc/build/meson-logs/testlog.txt
