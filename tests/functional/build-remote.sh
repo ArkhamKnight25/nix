@@ -70,12 +70,9 @@ echo "$output" | grepQuiet builder-build-remote-input-3.sh
 unset output
 
 
-# input1 was built on the legacy `ssh://` builder. Driven from inside the
-# worker rather than by a hook process, that store's build log is not
-# collected (see `openMachineStore` in
-# src/libstore/unix/build/remote-machine-build.cc), so `nix log` has
-# nothing for it; `ssh-ng://` keeps the log.
-for i in input3; do
+# input1's log comes from ssh's stderr (legacy `ssh://`), input3's from
+# the daemon's messages (`ssh-ng://`); both must reach the log file.
+for i in input1 input3; do
 nix log --store "$TEST_ROOT/machine0" --file "$file" --arg busybox "$busybox" "passthru.$i" | grep hi-$i
 done
 

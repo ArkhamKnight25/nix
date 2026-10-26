@@ -1408,7 +1408,13 @@ struct RemoteBuildLogger : Logger
     uint64_t maxLogSize;
     uint64_t logSize = 0;
     bool logLimitExceeded = false;
-    fun<void()> onLogLimitExceeded;
+    std::function<void()> onLogLimitExceeded;
+
+    /**
+     * The build's activity, on which `rawOutput` reports lines.
+     */
+    ActivityId buildActivity = 0;
+    std::string currentRawLine;
 
     RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath, uint64_t maxLogSize)
         : next(next)
@@ -1425,6 +1431,43 @@ struct RemoteBuildLogger : Logger
     void closeLogFile()
     {
         logFile.reset();
+    }
+
+    /**
+     * Build output that arrives as bytes rather than as messages (a
+     * legacy `ssh://` machine's, from ssh's stderr): kept in the log
+     * file as it is, each complete line reported on `buildActivity`, as
+     * `BuildLog` did for the hook. Called from the drain's thread, the
+     * only one to touch the log file for such a machine; the drain is
+     * gone before the goal wakes. Past `max-log-size` the output is
+     * dropped and the limit reported when the build ends; the store that
+     * produces it cannot be interrupted from here.
+     */
+    void rawOutput(std::string_view data)
+    {
+        try {
+            logSize += data.size();
+            if (maxLogSize && logSize > maxLogSize) {
+                if (!logLimitExceeded) {
+                    logLimitExceeded = true;
+                    if (onLogLimitExceeded)
+                        onLogLimitExceeded();
+                }
+                return;
+            }
+            if (logFile && logFile->sink)
+                (*logFile->sink)(data);
+            for (char c : data) {
+                if (c == '\n') {
+                    const Field fields[] = {currentRawLine};
+                    next.result(buildActivity, resBuildLogLine, fields);
+                    currentRawLine.clear();
+                } else if (c != '\r')
+                    currentRawLine += c;
+            }
+        } catch (...) {
+            ignoreExceptionInDestructor();
+        }
     }
 
     void stop() override
@@ -1567,6 +1610,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         .inputPaths = inputPaths,
         .wantedOutputs = std::move(wantedOutputs),
         .messageLogger = remoteLogger,
+        .rawBuildOutput = [remoteLogger](std::string_view data) { remoteLogger->rawOutput(data); },
     });
 
     buildResult.startTime = time(nullptr); // inexact
@@ -1588,6 +1632,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         actBuild,
         msg,
         std::to_array<Logger::Field>({worker.store.printStorePath(drvPath), machineName, 1, 1}));
+    remoteLogger->buildActivity = act.id;
     mcRunningBuilds = std::make_unique<MaintainCount<uint64_t>>(worker.runningBuilds);
     worker.updateProgress();
 

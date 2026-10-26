@@ -8,6 +8,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/util/serialise-async.hh"
 
+#include <functional>
 #include <variant>
 
 namespace nix {
@@ -46,6 +47,15 @@ struct RemoteMachineBuildRequest
      * that it outlives the coroutine however that ends.
      */
     std::shared_ptr<Logger> messageLogger;
+
+    /**
+     * Where a machine's build output goes when it arrives as bytes
+     * rather than as log messages: a legacy `ssh://` machine's build log
+     * is ssh's stderr. Called from a thread of its own, since the store
+     * producing it blocks the worker's thread; see `openMachineStore`.
+     * Empty: the output is not collected.
+     */
+    std::function<void(std::string_view)> rawBuildOutput;
 };
 
 /**

@@ -7,13 +7,64 @@
 #include "nix/store/store-open.hh"
 #include "nix/util/experimental-features.hh"
 #include "nix/util/finally.hh"
+#include "nix/util/util.hh"
 
 #include <boost/asio/steady_timer.hpp>
 
-#include <atomic>
+#include <array>
 #include <ranges>
+#include <thread>
+
+#include <unistd.h>
 
 namespace nix {
+
+/**
+ * Reads what a legacy `ssh://` machine writes to ssh's stderr, which is
+ * the remote build's log, and hands it to `sink`, as the hook's parent
+ * did from the pipe on the hook's descriptor 4. A thread of its own does
+ * the reading: that store blocks the worker's thread for the whole of
+ * `buildDerivation`, so nothing else could, and the ssh child would
+ * stall once the pipe filled. The write side goes to the store as
+ * `log-fd` and is inherited by its ssh children as their stderr;
+ * destroying this closes our copy and waits for the reader, which ends
+ * when the last child holding one has gone. Destroy it after the store.
+ */
+struct RawLogDrain
+{
+    Pipe pipe;
+    std::thread reader;
+
+    RawLogDrain(std::function<void(std::string_view)> sink)
+    {
+        pipe.create();
+        reader = std::thread([fd = pipe.readSide.get(), sink = std::move(sink)]() {
+            try {
+                std::array<char, 4096> buf;
+                while (true) {
+                    ssize_t n = ::read(fd, buf.data(), buf.size());
+                    if (n == 0)
+                        break;
+                    if (n == -1) {
+                        if (errno == EINTR)
+                            continue;
+                        break;
+                    }
+                    sink(std::string_view(buf.data(), n));
+                }
+            } catch (...) {
+                ignoreExceptionInDestructor();
+            }
+        });
+    }
+
+    ~RawLogDrain()
+    {
+        pipe.writeSide.close();
+        if (reader.joinable())
+            reader.join();
+    }
+};
 
 /**
  * Open the machine's store for use from this coroutine. Only `ssh-ng`
@@ -21,27 +72,33 @@ namespace nix {
  * `ssh://`, a local store) is opened as usual and blocks the worker
  * while it is talked to. `mounted-ssh-ng` has its own store class and
  * is left to the blocking path too.
+ *
+ * `rawLog` is created on demand for a machine whose build log arrives
+ * as bytes, and reused for the next such machine.
  */
 static ref<Store> openMachineStore(
-    const RemoteMachineBuildRequest & req, const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
+    const RemoteMachineBuildRequest & req,
+    const Machine & machine,
+    std::unique_ptr<RawLogDrain> & rawLog,
+    asio::io_context & ctx,
+    asio::yield_context yield)
 {
     auto storeUri = machine.completeStoreReference();
 
     /* `Machine::completeStoreReference` points the legacy `ssh://`
        store's `log-fd` at descriptor 4: the hook's pipe to its parent,
        where ssh's stderr, carrying the remote build's log, was read by
-       the parent and written into the log file. Inside the worker there
-       is no such descriptor, and nobody could read a pipe in its place:
-       this store blocks the thread for the whole of `buildDerivation`,
-       and the ssh child would stall once the pipe filled. The log is
-       therefore not kept for these machines; say so, once. */
-    if (storeUri.params.erase("log-fd")) {
-        static std::atomic<bool> warned = false;
-        if (!warned.exchange(true))
-            warn(
-                "remote builder '%s' is a legacy `ssh://` store: the logs of builds done there are not kept, so "
-                "`nix log` will not show them; use `ssh-ng://` instead",
-                machine.storeUri.render());
+       the parent and written into the log file. Here that pipe is ours.
+       Left unset, ssh's stderr would be inherited (`SSHMaster::startCommand`
+       redirects it only when `logFD` is given) and the build's output
+       would land raw on the worker's stderr, around the logger. */
+    if (storeUri.params.contains("log-fd")) {
+        if (req.rawBuildOutput) {
+            if (!rawLog)
+                rawLog = std::make_unique<RawLogDrain>(req.rawBuildOutput);
+            storeUri.params["log-fd"] = std::to_string(rawLog->pipe.writeSide.get());
+        } else
+            storeUri.params.erase("log-fd");
     }
 
     auto config = resolveStoreConfig(std::move(storeUri));
@@ -97,14 +154,17 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     auto currentLoad = getCurrentLoadDir(store);
 
     /* Connect, moving on to the next machine when one cannot be
-       reached, as `serveBuildHook` does. */
+       reached, as `serveBuildHook` does. The drain is declared before
+       the store so that it is destroyed after it, once the ssh children
+       writing to it are gone. */
+    std::unique_ptr<RawLogDrain> rawLog;
     std::shared_ptr<Store> sshStore;
     std::string storeUri;
     while (true) {
         storeUri = acquired.machine->storeUri.render();
         try {
             Activity act(*logger, lvlTalkative, actUnknown, fmt("connecting to '%s'", storeUri));
-            sshStore = openMachineStore(req, *acquired.machine, ctx, yield);
+            sshStore = openMachineStore(req, *acquired.machine, rawLog, ctx, yield);
             sshStore->connect();
             break;
         } catch (Interrupted &) {
