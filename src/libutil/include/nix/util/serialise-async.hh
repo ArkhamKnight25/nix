@@ -6,7 +6,11 @@
 #include "nix/util/serialise.hh"
 #include "nix/util/file-descriptor.hh"
 
-#include <boost/asio/posix/stream_descriptor.hpp>
+#ifdef _WIN32
+#  include <boost/asio/windows/stream_handle.hpp>
+#else
+#  include <boost/asio/posix/stream_descriptor.hpp>
+#endif
 #include <boost/asio/spawn.hpp>
 
 #include <cassert>
