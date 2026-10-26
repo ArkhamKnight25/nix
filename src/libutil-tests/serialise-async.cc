@@ -3,6 +3,10 @@
 #include "nix/util/memory-source-accessor.hh"
 #include "nix/util/tests/gmock-matchers.hh"
 
+#include <boost/asio/bind_cancellation_slot.hpp>
+#include <boost/asio/cancellation_signal.hpp>
+#include <boost/asio/error.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/use_future.hpp>
 
 #include <gtest/gtest.h>
@@ -119,6 +123,56 @@ TEST_F(AsyncFdTest, hasDataProbesTheDescriptorThroughTheBase)
     auto [before, after] = probe.get();
     EXPECT_FALSE(before);
     EXPECT_TRUE(after);
+}
+
+/* Skeleton, written against the headers and not yet run. The shape
+   `DerivationBuildingGoal::buildRemotely` relies on when its goal is
+   destroyed: a coroutine suspended on a read, a `cancellation_signal`
+   bound to its completion, and the signal emitted from the loop. The
+   pending read must complete with `operation_aborted`, the coroutine
+   unwind with that error, and the loop run dry afterwards; a read that
+   ignored the cancellation would leave `~Worker` waiting. */
+TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
+{
+    Pipe pipe;
+    pipe.create();
+
+    asio::cancellation_signal cancel;
+    std::exception_ptr error;
+    bool completed = false;
+
+    asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            char c;
+            /* Nobody writes, so this suspends until cancelled. */
+            source(&c, 1);
+        },
+        asio::bind_cancellation_slot(cancel.slot(), [&](std::exception_ptr e) {
+            completed = true;
+            error = e;
+        }));
+
+    /* Run the coroutine up to its suspension on the read. */
+    ctx.poll();
+    ASSERT_FALSE(completed);
+
+    /* From the loop, as `onLogLimitExceeded` and `CancelOnExit` do. */
+    asio::post(ctx, [&]() { cancel.emit(asio::cancellation_type::terminal); });
+    ctx.run();
+
+    ASSERT_TRUE(completed);
+    ASSERT_TRUE(error);
+    try {
+        std::rethrow_exception(error);
+    } catch (SystemError & e) {
+        EXPECT_EQ(e.ec(), std::error_code(asio::error::make_error_code(asio::error::operation_aborted)));
+    } catch (...) {
+        FAIL() << "expected a SystemError carrying operation_aborted";
+    }
+    /* Nothing left on the loop: the cancelled read was its only work. */
+    EXPECT_TRUE(ctx.stopped());
 }
 
 } // namespace nix
