@@ -32,6 +32,7 @@ private:
     const std::string sshPublicHostKey;
     const bool useMaster;
     const bool compress;
+    const bool batchMode;
     const Descriptor logFD;
 
     const ref<const AutoDelete> tmpDir;
@@ -57,12 +58,18 @@ public:
         std::string_view sshPublicHostKey,
         bool useMaster,
         bool compress,
-        Descriptor logFD = INVALID_DESCRIPTOR);
+        Descriptor logFD = INVALID_DESCRIPTOR,
+        bool batchMode = false);
 
     struct Connection
     {
         Pid sshPid;
         AutoCloseFD out, in;
+
+        /**
+         * If set, the caller must first read ssh's `started` line from `out`.
+         */
+        bool startedLinePending = false;
 
         /**
          * Try to set the buffer size in both directions to the
@@ -84,7 +91,8 @@ public:
      * execute). Will not be used when "fake SSHing" to the local
      * machine.
      */
-    std::unique_ptr<Connection> startCommand(OsStrings && command, OsStrings && extraSshArgs = {});
+    std::unique_ptr<Connection>
+    startCommand(OsStrings && command, OsStrings && extraSshArgs = {}, bool awaitStarted = true);
 };
 
 } // namespace nix
