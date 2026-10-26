@@ -141,6 +141,17 @@ private:
     WeakGoals wantingToSubstitute;
 
     /**
+     * Goals waiting for the build hook, woken by `releaseHook`.
+     *
+     * Liveness: a goal that set `hookBusy` either has the hook's reply
+     * pipe registered as a child, so the poll loop can wake it, or is
+     * on its way out through the `Finally` in `tryBuildHook` that
+     * calls `releaseHook`. There is no state in which the hook is busy
+     * and nothing will release it.
+     */
+    WeakGoals wantingHook;
+
+    /**
      * Child processes currently running.
      */
     std::list<Child> children;
@@ -284,12 +295,18 @@ public:
 
 #ifndef _WIN32 // TODO Enable building on Windows
     /**
-     * A build hook that is not talking to any goal, kept for the next
-     * goal that needs one. A goal that is awaiting a hook's reply owns
-     * that hook itself; see `DerivationBuildingGoal::tryBuildHook`.
+     * The build hook, kept for the next goal that needs one. A goal
+     * that is awaiting the hook's reply owns it meanwhile; see
+     * `DerivationBuildingGoal::tryBuildHook`.
      */
     std::unique_ptr<HookInstance> hook;
 #endif
+
+    /**
+     * Whether a goal is awaiting the build hook's reply. Other goals
+     * wait for it with `waitForHook`.
+     */
+    bool hookBusy = false;
 
     uint64_t expectedBuilds = 0;
     uint64_t doneBuilds = 0;
@@ -436,6 +453,16 @@ public:
      * to wait for multiple locks in the main select() loop.
      */
     void waitForAWhile(GoalPtr goal);
+
+    /**
+     * Put `goal` to sleep until the build hook is released.
+     */
+    void waitForHook(GoalPtr goal);
+
+    /**
+     * Clear `hookBusy` and wake up the goals waiting for the hook.
+     */
+    void releaseHook();
 
     /**
      * Wait until explicitly resumed by Waker::enqueue.

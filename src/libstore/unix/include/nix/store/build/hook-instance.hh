@@ -16,8 +16,15 @@ namespace nix {
  * owned by a `Goal`. This is for efficiency: rather than starting the
  * hook every time we want to ask whether we can run a remote build
  * (which can be very often), we reuse a hook process for answering
- * those queries until it accepts a build.  So if there are N
- * derivations to be built, at most N hooks will be started.
+ * those queries until it accepts a build.
+ *
+ * One hook decides at a time. The goal asking it owns it while it
+ * waits for the reply (`Worker::hookBusy`); other goals that want the
+ * hook queue in `Worker::wantingHook` rather than start their own. A
+ * `decline` or `postpone` hands the hook back to `Worker::hook` for
+ * the next goal; `accept` keeps it for the build, and the next goal
+ * starts a fresh one. So besides the hook each accepted build takes
+ * along, at most one more is alive.
  */
 struct HookInstance
 {
