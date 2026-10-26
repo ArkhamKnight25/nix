@@ -83,7 +83,8 @@ SSHMaster::SSHMaster(
     std::string_view sshPublicHostKey,
     bool useMaster,
     bool compress,
-    Descriptor logFD)
+    Descriptor logFD,
+    bool batchMode)
     : authority(authority)
     , hostnameAndUser([authority]() {
         std::ostringstream oss;
@@ -97,6 +98,7 @@ SSHMaster::SSHMaster(
     , sshPublicHostKey(parsePublicHostKey(authority.host, sshPublicHostKey))
     , useMaster(useMaster && !fakeSSH)
     , compress(compress)
+    , batchMode(batchMode)
     , logFD(logFD)
     , tmpDir(make_ref<AutoDelete>(createTempDir("", "nix", 0700)))
 {
@@ -117,6 +119,10 @@ void SSHMaster::addCommonSSHOpts(OsStrings & args)
     }
     if (compress)
         args.push_back(OS_STR("-C"));
+    /* On every invocation for this host, the master included: a prompt
+       from any of them would stall the thread that must not block. */
+    if (batchMode)
+        args.push_back(OS_STR("-oBatchMode=yes"));
 
     if (authority.port)
         args.push_back(string_to_os_string(fmt("-p%d", *authority.port)));

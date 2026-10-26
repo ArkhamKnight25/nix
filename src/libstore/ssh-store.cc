@@ -75,7 +75,12 @@ public:
         , async(std::move(async))
         , master(config->createSSHMaster(
               // Use SSH master only if using more than 1 connection.
-              connections->capacity() > 1))
+              connections->capacity() > 1,
+              INVALID_DESCRIPTOR,
+              /* Opened from a coroutine (`openStoreAsync`): ssh must
+                 not prompt. `this->async`: the parameter was moved
+                 from above. */
+              /*batchMode=*/this->async.has_value()))
     {
     }
 

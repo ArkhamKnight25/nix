@@ -32,6 +32,11 @@ private:
     const std::string sshPublicHostKey;
     const bool useMaster;
     const bool compress;
+    /**
+     * Pass `-oBatchMode=yes`: ssh fails instead of prompting. See the
+     * constructor.
+     */
+    const bool batchMode;
     const Descriptor logFD;
 
     const ref<const AutoDelete> tmpDir;
@@ -51,13 +56,24 @@ private:
 
 public:
 
+    /**
+     * @param batchMode Whether ssh may prompt. A connection the worker
+     * drives from inside a coroutine (`SSHStoreConfig::openStoreAsync`)
+     * must not: the worker's thread would sit in ssh's prompt while
+     * every other goal waits, and the goal's own wait for the
+     * `started` line suspends with the prompt half drawn. The build
+     * hook ran ssh under `setsid` with no `DISPLAY` or `SSH_ASKPASS`,
+     * so it could never prompt either; `-oBatchMode=yes` makes ssh fail
+     * at once instead, with its reason on stderr.
+     */
     SSHMaster(
         const ParsedURL::Authority & authority,
         std::optional<std::filesystem::path> keyFile,
         std::string_view sshPublicHostKey,
         bool useMaster,
         bool compress,
-        Descriptor logFD = INVALID_DESCRIPTOR);
+        Descriptor logFD = INVALID_DESCRIPTOR,
+        bool batchMode = false);
 
     struct Connection
     {
