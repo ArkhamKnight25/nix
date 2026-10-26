@@ -9,6 +9,7 @@
 #  include <boost/asio/bind_cancellation_slot.hpp>
 #  include <boost/asio/cancellation_signal.hpp>
 #  include <boost/asio/spawn.hpp>
+#  include <boost/context/protected_fixedsize_stack.hpp>
 #endif
 #include "nix/util/fun.hh"
 #include "nix/util/processes.hh"
@@ -1676,8 +1677,19 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         });
     };
 
+    /* Boost's default coroutine stack is small (128 KiB on most
+       platforms). This one runs SQLite, NAR hashing and the compression
+       of the log file, and for a machine that is not `ssh-ng` a whole
+       nested `Worker` through the blocking store. A protected stack is
+       reserved, not committed, so a generous size costs address space
+       only, and a guard page turns an overflow into a fault instead of
+       silent corruption. */
+    static constexpr size_t remoteBuildStackSize = 8 * 1024 * 1024;
+
     asio::spawn(
         worker.ioContext,
+        std::allocator_arg,
+        boost::context::protected_fixedsize_stack(remoteBuildStackSize),
         [&store = worker.store,
          &machines = worker.remoteMachines(),
          &ctx = worker.ioContext,
