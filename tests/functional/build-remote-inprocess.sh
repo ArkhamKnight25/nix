@@ -32,6 +32,7 @@ trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
 # One builder script, one line of build output that `nix log` must
 # reproduce. Busybox is the builder because it is the only program the
 # chroot is guaranteed to contain.
+# shellcheck disable=SC2016
 expr='
   let system = (import '"${config_nix}"').system; in
   derivation {
