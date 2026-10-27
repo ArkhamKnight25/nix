@@ -21,8 +21,18 @@ drop this file, and rewrite every commit message by hand, before any PR.
   stopping one remote build from the client while a sibling continues;
   failures with and without --keep-going; skipping an unreachable machine;
   a machine dying mid-build; ssh:// going through the hook process.
-- Run 40596773169 (this branch at d2c791782: exact daemon-version guard for
-  the in-process tests) was still running when this was written.
+- Run 40596773169 (this branch at d2c791782, plus the VM-test CI commit):
+  every job passed as well. The in-process tests ran in the main suite (13
+  OK) and in the daemon-compatibility suite against this branch's own
+  daemon (12 OK), and skipped against the released 2.34 and 2.35 daemons.
+- Correction: the cancelled runs 40578612196 and 40587960075 hung for one
+  reason only. The in-process tests' EXIT traps replaced the framework's
+  `killDaemon`, leaking the test daemon, and meson waited on it. The
+  daemon-compatibility suite labelled "2.36.0" is `againstSelf` (this
+  branch's own daemon, packaging/hydra.nix), not a released 2.36.0 as the
+  commit message of d2c791782 says. That commit's guard
+  (`requireDaemonIsThisVersion`) is still right for released daemons, but
+  the trap fix is what ended the hang.
 
 ## Goal
 
