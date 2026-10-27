@@ -34,7 +34,7 @@ machine="ssh-ng://localhost?remote-store=$TEST_ROOT/machine1"
 rm -rf "$TEST_ROOT/machine1"
 
 # shellcheck disable=SC2016
-outPath=$(nix-build --no-out-link -vv --max-jobs 1 \
+outPath=$(nix-build --no-out-link -vvv --max-jobs 1 \
   --option build-hook "$hook" --builders "$machine - - 1 1" -E '
   with import '"${config_nix}"';
   mkDerivation { name = "inprocess-custom-hook"; buildCommand = "echo local > $out"; }
