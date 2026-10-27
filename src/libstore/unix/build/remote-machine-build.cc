@@ -13,6 +13,7 @@
 #include <boost/asio/steady_timer.hpp>
 
 #include <array>
+#include <optional>
 #include <ranges>
 #include <thread>
 
@@ -81,6 +82,7 @@ static ref<Store> openMachineStore(
     const RemoteMachineBuildRequest & req,
     const Machine & machine,
     std::unique_ptr<RawLogDrain> & rawLog,
+    bool & blocking,
     asio::io_context & ctx,
     asio::yield_context yield)
 {
@@ -104,13 +106,39 @@ static ref<Store> openMachineStore(
 
     auto config = resolveStoreConfig(std::move(storeUri));
     if (!config.dynamic_pointer_cast<const MountedSSHStoreConfig>())
-        if (auto sshConfig = config.dynamic_pointer_cast<const SSHStoreConfig>())
+        if (auto sshConfig = config.dynamic_pointer_cast<const SSHStoreConfig>()) {
+            blocking = false;
             return sshConfig->openStoreAsync(ctx, yield, req.messageLogger);
+        }
+    blocking = true;
     warn(
         "remote builder '%s' is not an ssh-ng store; talking to it will hold up other builds",
         machine.storeUri.render());
     return config->openStore();
 }
+
+/**
+ * The hook process set `max-jobs` to 1 before it opened the machine's
+ * store, so that a client running with `-j0` could still build on a
+ * machine that builds in this process (`auto`, `local?root=`), or on a
+ * local daemon, which takes the client's `max-jobs` when it connects.
+ * Here the setting belongs to the whole process, so it is raised only
+ * around calls on such a store, which do not yield to the worker.
+ */
+struct MachineMaxBuildJobs
+{
+    unsigned int saved = settings.getWorkerSettings().maxBuildJobs.get();
+
+    MachineMaxBuildJobs()
+    {
+        settings.getWorkerSettings().maxBuildJobs.assign(1);
+    }
+
+    ~MachineMaxBuildJobs()
+    {
+        settings.getWorkerSettings().maxBuildJobs.assign(saved);
+    }
+};
 
 /**
  * The hook waited for the upload lock with `alarm(15 * 60)` around a
@@ -160,12 +188,16 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
        writing to it are gone. */
     std::unique_ptr<RawLogDrain> rawLog;
     std::shared_ptr<Store> sshStore;
+    bool blocking = false;
     std::string storeUri;
     while (true) {
         storeUri = acquired.machine->storeUri.render();
         try {
             Activity act(*logger, lvlTalkative, actUnknown, fmt("connecting to '%s'", storeUri));
-            sshStore = openMachineStore(req, *acquired.machine, rawLog, ctx, yield);
+            sshStore = openMachineStore(req, *acquired.machine, rawLog, blocking, ctx, yield);
+            std::optional<MachineMaxBuildJobs> maxBuildJobs;
+            if (blocking)
+                maxBuildJobs.emplace();
             sshStore->connect();
             break;
         } catch (Interrupted &) {
@@ -230,6 +262,9 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     //
     // This condition mirrors that: that code enforces the "rules" outlined there;
     // we do the best we can given those "rules".
+    std::optional<MachineMaxBuildJobs> maxBuildJobs;
+    if (blocking)
+        maxBuildJobs.emplace();
     if (trustedOrLegacy || type(drv).isCA()) {
         /* `req.drv` already carries its input derivations' outputs as
            input sources, which is the derivation `serveBuildHook`
@@ -245,6 +280,7 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         assert(res.size() == 1);
         result = std::move(res[0]);
     }
+    maxBuildJobs.reset();
 
     if (result.tryGetFailure()) {
         if (settings.keepFailed)
