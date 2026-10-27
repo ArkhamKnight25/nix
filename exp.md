@@ -93,11 +93,17 @@ should leak the same way; not yet run. Evidence: branch
   - docs link check: the release note named `max-log-size`; the setting
     is `max-build-log-size`.
 
+- Run 40448795410 (ff684945e): every job passes. That is build,
+  clang-tidy, Windows unit tests, unit and functional tests on Linux,
+  macOS and with sanitizers, the docs link check, flake regressions, and
+  the installer tests on Linux and macOS. The remote-build VM tests
+  (`remoteBuilds`, `remoteBuildsSshNg`) are not part of this workflow and
+  have not run on this branch.
+
 ## Not verified yet
 
 - Nothing beyond libutil and libstore has been compiled: not libexpr,
   the `nix` binary, or Linux / Windows cross builds.
-- The fixes above, until the next CI run is green.
 - No local test run: this Mac has no Nix, and the unit tests need rapidcheck.
 - Linux behaviour, sandboxed builds, `ssh://` legacy path, real remote
   machines over a network.
