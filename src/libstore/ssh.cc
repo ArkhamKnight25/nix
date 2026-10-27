@@ -220,10 +220,13 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
 
 #ifndef _WIN32
     /* With `localhost` this is the remote daemon itself. Let it stop its
-       build before it is killed: nothing else does on macOS. The Windows
-       `Pid` has no kill signal to choose. */
-    conn->sshPid.setKillSignal(SIGTERM);
-    conn->sshPid.setKillTimeout(std::chrono::seconds(10));
+       build before it is killed: nothing else does on macOS. A real ssh
+       client is killed as before; the remote side sees the connection
+       close. The Windows `Pid` has no kill signal to choose. */
+    if (fakeSSH) {
+        conn->sshPid.setKillSignal(SIGTERM);
+        conn->sshPid.setKillTimeout(std::chrono::seconds(10));
+    }
 #endif
 
     in.readSide.close();
