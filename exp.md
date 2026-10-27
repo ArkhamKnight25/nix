@@ -3,16 +3,26 @@
 Working notes for this branch. Written with Claude Code. Not for upstream:
 drop this file, and rewrite every commit message by hand, before any PR.
 
-## Status (2026-10-28)
+## Status (2026-10-28, evening)
 
-- Proven by a passing test: two remote builds on `ssh-ng` run at the same
-  time from one worker (Linux, macOS, sanitizer build).
-- Not proven yet: local builds progressing while a remote build runs (its
-  test was broken; fixed, CI run 40578612196 pending), and the
-  remote-build VM tests with a real sshd (same run).
-- Known regression, found 2026-10-28: `ssh://` machines now block the
-  worker for their whole build (see "Known problems").
-- Commit messages and code comments are still to be rewritten by hand.
+- CI run 40590731731 (branch exp-async-inprocess-hook-vm4 = this branch at
+  cb10dfda5 plus the VM-test CI commit): every job passed. Checked in the
+  logs, not only the job status:
+  - Ubuntu 241 OK / 0 fail; sanitizers 242 OK / 0 fail (twice); macOS
+    214 OK / 0 fail.
+  - All 15 remote-build tests pass on Linux; on macOS 13 pass and 2 skip by
+    design (they need a sandbox).
+  - VM tests with a real sshd: `remote-builds` (ssh://) and
+    `remote-builds-ssh-ng` pass.
+  - Daemon-compatibility suites against released 2.34, 2.35 and 2.36.0
+    daemons pass; installer tests and flake regressions pass.
+- Proven by tests: two and sixteen remote builds at once from one worker;
+  local builds progressing while a remote build runs; the log limit
+  stopping one remote build from the client while a sibling continues;
+  failures with and without --keep-going; skipping an unreachable machine;
+  a machine dying mid-build; ssh:// going through the hook process.
+- Run 40596773169 (this branch at d2c791782: exact daemon-version guard for
+  the in-process tests) was still running when this was written.
 
 ## Goal
 
@@ -177,19 +187,37 @@ Both failures in run 40570429865 were bugs in the tests, not in Nix:
 
 ## Known problems
 
-- `ssh://` (and `mounted-ssh-ng`, local-store) machines: with the default
-  `build-hook`, every machine goes through the in-process path
-  (`tryRemoteBuilder` calls `selectRemoteMachine`), but only `ssh-ng` gets
-  an asynchronous connection. The others run the whole build on the
-  worker thread, which stalls every other build meanwhile. Upstream ran
-  them in a separate hook process, so for these machines this branch is a
-  regression. Proposed fix, not done yet: use the in-process path only for
-  `ssh-ng` machines and fall back to the hook process for the rest.
-- Each ssh connection's teardown can block the worker for up to 10 s
-  (SIGTERM, then SIGKILL), on every remote build, not only on errors.
-- Open questions under review: cancellation during the buffered-write
-  flush on unwind, suspending from inside the nested fiber that streams
-  outputs, and the 8 MiB stack per remote build in flight.
+Fixed on 2026-10-28 after line-by-line reviews (each its own commit):
+- Cancellation now fails every later async operation
+  (`throw_if_cancelled`): before, Ctrl-C during a stalled upload could
+  abort Nix (reproduced outside Nix), and the log limit could fail to stop
+  a flooding build.
+- Lines past `max-build-log-size` are all dropped, not only the first.
+- Machines other than `ssh-ng` go to the hook process, so they no longer
+  hold up the worker (`machineRunsInProcess`).
+- `timesBuilt` is counted only when a remote build ran.
+- The ssh child gets SIGTERM plus a grace period only for `localhost`;
+  real ssh is killed as upstream does.
+- The async streams report a broken connection through `good()`.
+
+Still open (from the reviews):
+- `LocalStore::locksHeld` is modified on the worker thread while
+  substitution threads may read it (data race, new with the in-process
+  copy-back).
+- The thread's current activity can leak between coroutines across a
+  suspension (progress-bar parentage, cosmetic).
+- Exception state (`std::uncaught_exceptions`) is per thread, not per
+  coroutine; I/O inside a catch block on the async path can confuse
+  another coroutine.
+- When the first machine is unreachable, the "building ... on" line names
+  it although the build ran on the next one.
+- `~Worker` waits only 5 s for in-flight remote builds.
+- Each ssh-ng connect runs `ssh -O check` synchronously.
+- Explicitly setting `build-hook = nix __build-remote` still takes the
+  in-process path (compared by value), contrary to the setting's text.
+- History: two `fixup!` commits target the wrong commit and must be
+  retargeted before squashing; Sergei Zimmerman's commit carries a message
+  and date that are not his.
 
 ## Not verified yet
 
