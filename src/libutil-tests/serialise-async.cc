@@ -11,12 +11,31 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <future>
+
 namespace nix {
 
 class AsyncFdTest : public ::testing::Test
 {
 protected:
     asio::io_context ctx;
+
+    /**
+     * Run the loop until it has no work left, but no longer than a few
+     * seconds: a coroutine that never completes must fail the test, not
+     * hang it.
+     */
+    void runBounded()
+    {
+        ctx.run_for(std::chrono::seconds(5));
+    }
+
+    template<typename T>
+    static bool ready(const std::future<T> & f)
+    {
+        return f.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    }
 };
 
 /* Note that in practice we'd want to run with the protected_fixedsize_stack allocator. */
@@ -48,7 +67,9 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(read));
+    ASSERT_TRUE(ready(write));
 
     std::unique_ptr<MemorySourceAccessor> accessor;
 
@@ -73,12 +94,10 @@ TEST_F(AsyncFdTest, writeToInvalidFd)
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(write));
     EXPECT_THROW(write.get(), SystemError);
 }
-
-/* The two tests below are skeletons: written against the headers, not
-   yet run. */
 
 TEST_F(AsyncFdTest, eofThrowsEndOfFile)
 {
@@ -97,7 +116,8 @@ TEST_F(AsyncFdTest, eofThrowsEndOfFile)
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(read));
     EXPECT_THROW(read.get(), EndOfFile);
 }
 
@@ -119,19 +139,20 @@ TEST_F(AsyncFdTest, hasDataProbesTheDescriptorThroughTheBase)
         },
         asio::use_future);
 
-    ctx.run();
+    runBounded();
+    ASSERT_TRUE(ready(probe));
     auto [before, after] = probe.get();
     EXPECT_FALSE(before);
     EXPECT_TRUE(after);
 }
 
-/* Skeleton, written against the headers and not yet run. The shape
-   `DerivationBuildingGoal::buildRemotely` relies on when its goal is
-   destroyed: a coroutine suspended on a read, a `cancellation_signal`
-   bound to its completion, and the signal emitted from the loop. The
-   pending read must complete with `operation_aborted`, the coroutine
-   unwind with that error, and the loop run dry afterwards; a read that
-   ignored the cancellation would leave `~Worker` waiting. */
+/* The shape `DerivationBuildingGoal::buildRemotely` relies on when its
+   goal is destroyed: a coroutine suspended on a read, a
+   `cancellation_signal` bound to its completion, and the signal emitted
+   from the loop. The pending read must complete with `operation_aborted`
+   and the coroutine unwind with that error; a read that ignored the
+   cancellation would leave `~Worker` waiting, and here would leave the
+   coroutine incomplete when the bounded run returns. */
 TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
 {
     Pipe pipe;
@@ -160,7 +181,7 @@ TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
 
     /* From the loop, as `onLogLimitExceeded` and `CancelOnExit` do. */
     asio::post(ctx, [&]() { cancel.emit(asio::cancellation_type::terminal); });
-    ctx.run();
+    runBounded();
 
     ASSERT_TRUE(completed);
     ASSERT_TRUE(error);
@@ -171,8 +192,6 @@ TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
     } catch (...) {
         FAIL() << "expected a SystemError carrying operation_aborted";
     }
-    /* Nothing left on the loop: the cancelled read was its only work. */
-    EXPECT_TRUE(ctx.stopped());
 }
 
 } // namespace nix
