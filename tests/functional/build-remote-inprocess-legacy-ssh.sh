@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 
 # An `ssh://` machine (the legacy protocol, served by `nix-store
-# --serve`) is still built on from inside the process, but through the
-# blocking path: only `ssh-ng` stores know how to suspend, so the worker
-# warns that talking to this machine will hold up other builds, and then
-# does so. The build itself succeeds and its output comes back.
+# --serve`) is not built on from inside the process. Only `ssh-ng`
+# stores can suspend instead of blocking the worker, so for any other
+# kind of machine the worker gives the selected slot back and starts the
+# hook process (`nix __build-remote`), as upstream does
+# (derivation-building-goal.cc, tryRemoteBuilder; remote-machine-build.cc,
+# machineRunsInProcess). The build itself succeeds and its output comes
+# back.
 #
-# `nix log` for a derivation built this way is not asserted here: the
-# machine's log arrives on ssh's stderr, which a thread drains into the
-# log file (remote-machine-build.cc, RawLogDrain); build-remote.sh
-# checks it for its `ssh://` machine.
+# `nix log` for a derivation built this way is not asserted here;
+# build-remote.sh checks it for its `ssh://` machine.
 #
 # Setup as in build-remote-inprocess-concurrent.sh: binary-cache client
 # store, `-j0`, the test's own store as the machine, no sandbox.
@@ -36,13 +37,14 @@ outPath=$(timeout 300 nix-build --store "file://$cache" --builders "ssh://localh
 # The result was copied back to the client's store.
 nix path-info --store "file://$cache" "$outPath"
 
-# Built on the machine by the in-process path, not by a hook
-# (derivation-building-goal.cc, buildRemotely).
+# Built on the machine, by the hook process (hook-instance.cc,
+# HookInstance::external), not by the in-process path
+# (derivation-building-goal.cc, buildRemotely: `trace("remote build done")`).
+# "building ... on" is printed by both.
 grepQuiet "building '.*-inprocess-legacy-ssh.drv' on 'ssh://localhost'" "$log"
-grepQuiet "remote build done" "$log"
-grepQuietInverse "starting build hook '" "$log"
+grepQuiet "starting build hook '" "$log"
+grepQuietInverse "remote build done" "$log"
 
-# Through the blocking path, announced as such. This is printed each
-# time the machine's store is opened, i.e. once per build on it
-# (remote-machine-build.cc, openMachineStore).
-grepQuiet "remote builder 'ssh://localhost' is not an ssh-ng store; talking to it will hold up other builds" "$log"
+# Nor did the in-process path open the machine's store on its blocking
+# fallback (remote-machine-build.cc, openMachineStore).
+grepQuietInverse "is not an ssh-ng store" "$log"
