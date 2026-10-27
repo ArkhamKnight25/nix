@@ -221,13 +221,14 @@ Still open (from the reviews):
 
 ## Not verified yet
 
-- The two test fixes above, until run 40578612196 finishes.
-- The VM tests `remoteBuilds` (legacy `ssh://`, the blocking path) and
-  `remoteBuildsSshNg` (the new path), the only tests with a real sshd.
-  One `remoteBuilds` assertion (two builds land on two different
-  builders) may fail, because the `ssh://` path blocks by design.
-- Real remote machines over a network.
-- No local test run: this Mac has no Nix, and the unit tests need rapidcheck.
+- Real remote machines over a network: the VM tests use VMs on one host,
+  and the functional tests use `ssh-ng://localhost`.
+- A worker running inside `nix-daemon` building remotely in-process (the
+  multi-user setup): no test yet; every in-process test builds in the
+  client.
+- Many remote builds over real ssh, and `max-connections > 1` on ssh-ng.
+- No local test run: this Mac has no Nix, and the unit tests need
+  rapidcheck. All test results above come from the fork's CI.
 
 ## History
 
