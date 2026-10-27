@@ -3,6 +3,15 @@
 Working notes for this branch. Written with Claude Code. Not for upstream:
 drop this file, and rewrite every commit message by hand, before any PR.
 
+## Status (2026-10-28)
+
+- Works and is green on the fork's CI (Linux, macOS, Windows), except two
+  of the newly ported tests (below).
+- Concurrency is proven by test: two remote builds that can only finish
+  together did finish together, on Linux, macOS and the sanitizer build.
+- Open: two failing ported tests; the remote-build VM tests have not run
+  yet; commit messages and code comments still to be rewritten by hand.
+
 ## Goal
 
 Today the worker forks a build hook per remote-build decision and blocks
@@ -46,10 +55,8 @@ on its reply. The goal is to remove that process:
   while waiting; unit tests for the async streams (including cancellation
   of a suspended read); a handshake over async streams, as a skeleton only.
   Release note and manual text.
-- Eight more in-process functional tests (two remote builds at once, local
-  builds progressing meanwhile, stopping the client, failures reported,
-  `ssh://` through the blocking path) exist on a local branch based on an
-  earlier version of this one; not yet carried over.
+- Seven more in-process functional tests, carried over on 2026-10-28; see
+  "Concurrency tests" below.
 
 ## macOS bug this also fixes
 
@@ -63,7 +70,7 @@ upstream `nix build --store ssh-ng://localhost` plus SIGTERM to the client
 should leak the same way; not yet run. Evidence: branch
 `evidence/hook-interrupt-2026-10-25`.
 
-## Verified so far (2026-10-27)
+## First local compile (2026-10-27)
 
 - libutil and libstore compile on macOS 26, Apple clang 21, Homebrew
   dependencies (Boost 1.92), with Nix's own warning flags.
@@ -99,6 +106,21 @@ should leak the same way; not yet run. Evidence: branch
   the installer tests on Linux and macOS. The remote-build VM tests
   (`remoteBuilds`, `remoteBuildsSshNg`) are not part of this workflow and
   have not run on this branch.
+
+- Run 40570429865 on `exp-async-inprocess-hook-vmtests` (this branch plus
+  the CI change that adds the VM tests), 2026-10-28:
+  - pass: build, pre-commit, clang-tidy, Windows unit tests, unit tests.
+  - pass: `build-remote-inprocess-concurrent` on Linux, macOS and with
+    sanitizers. This is the test that proves concurrency.
+  - FAIL: `build-remote-inprocess-error` on Linux, macOS and sanitizers.
+  - FAIL: `build-remote-inprocess-local-progress` on Linux and sanitizers,
+    after 0.2 s (exit status 100), so likely its setup, not the worker.
+    On macOS it is skipped (needs a sandbox).
+  - Not reached: the VM tests and the installer tests, which run after
+    the functional tests.
+  - Neither failure is diagnosed yet.
+
+Commit IDs above are from before 2026-10-28; see "History" below.
 
 ## Does the worker really never block? (code audit, 2026-10-28)
 
@@ -138,11 +160,26 @@ Still blocking, by design or bounded:
 
 ## Not verified yet
 
-- Nothing beyond libutil and libstore has been compiled: not libexpr,
-  the `nix` binary, or Linux / Windows cross builds.
+- The two failing tests above.
+- The VM tests `remoteBuilds` (legacy `ssh://`, the blocking path) and
+  `remoteBuildsSshNg` (the new path), the only tests with a real sshd.
+  One `remoteBuilds` assertion (two builds land on two different
+  builders) may fail, because the `ssh://` path blocks by design.
+- Real remote machines over a network.
 - No local test run: this Mac has no Nix, and the unit tests need rapidcheck.
-- Linux behaviour, sandboxed builds, `ssh://` legacy path, real remote
-  machines over a network.
+
+## History
+
+- 2026-10-28: author and committer of every commit by the branch owner set
+  to `ArkhamKnight25 <amritamber3112@gmail.com>` (some had a machine-local
+  address), and `Co-Authored-By:` / `Assisted-by:` lines naming Claude
+  removed from the messages, on all fork branches except `hook-fold`
+  (unchanged). Commit order, messages, dates and trees are unchanged; the
+  commit IDs changed, so IDs quoted above from before that date no longer
+  exist on the fork. Commits by other people keep their authors.
+- Nix's contribution policy requires an `Assisted-by:` trailer on
+  AI-assisted commits, so the disclosure has to be added back, in the
+  owner's words, before any upstream PR.
 
 ## Open questions
 
