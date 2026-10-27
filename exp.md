@@ -77,13 +77,28 @@ should leak the same way; not yet run. Evidence: branch
     (`-Werror=weak-vtables`; a weak vtable also breaks `dynamic_cast`
     across shared libraries on Darwin).
 
+## CI on the fork
+
+- Run 40444716203 (8539269d8): only clang-format failed; fixed with the
+  exact diff CI's clang-format 21 printed ("Apply clang-format").
+- Run 40445052233 (224ad2244): build, clang-tidy, Windows unit tests,
+  unit tests on Linux and macOS, and sanitizer unit tests pass. Functional
+  tests: 203 of 204 pass on macOS. Failures, both fixed since:
+  - `binary-cache-build-remote` (Linux, macOS, sanitizers): a client run
+    with `-j0` and `--builders 'auto ...'` could not build on that machine.
+    The hook process had set `max-jobs` to 1 before opening the machine's
+    store; in-process the client's 0 applied. Now raised to 1 only around
+    the non-yielding calls on a store that is not `ssh-ng`, and restored.
+    `ssh-ng` machines are unaffected: `SSHStore::setOptions` sends nothing.
+  - docs link check: the release note named `max-log-size`; the setting
+    is `max-build-log-size`.
+
 ## Not verified yet
 
 - Nothing beyond libutil and libstore has been compiled: not libexpr,
   the `nix` binary, or Linux / Windows cross builds.
-- No unit or functional test has run. Unit tests need rapidcheck;
-  functional tests need the full build. Next: the fork's `ci.yml` via
-  workflow_dispatch on this branch, or a local Nix dev shell.
+- The fixes above, until the next CI run is green.
+- No local test run: this Mac has no Nix, and the unit tests need rapidcheck.
 - Linux behaviour, sandboxed builds, `ssh://` legacy path, real remote
   machines over a network.
 
