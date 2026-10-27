@@ -1449,6 +1449,8 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
     return {rpAccept, std::get<AcquiredMachine>(std::move(selection))};
 }
 
+namespace {
+
 /**
  * Sees the machine's messages pass on their way to the process's logger,
  * as `buildWithHook` saw the hook's. The build's own lines arrive as
@@ -1645,6 +1647,8 @@ struct RemoteBuildLogger : Logger
         next.setPrintBuildLogs(printBuildLogs);
     }
 };
+
+} // namespace
 
 Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::buildRemotely(
     AcquiredMachine machine,
