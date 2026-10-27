@@ -48,8 +48,10 @@ grepQuiet "cannot build on 'ssh-ng://localhost.*no-such-program" "$log"
 # No machine was left, and the client store cannot build
 # (derivation-building-goal.cc, reject: NoLocalStore).
 grepQuiet "Unable to build with a primary store that isn't a local store" "$log"
-# Nothing was built anywhere, and no hook was started.
-grepQuietInverse "remote build done" "$log"
+# Nothing was sent to a machine, and no hook was started. ("remote build
+# done" is traced whenever the remote-build coroutine returns, including
+# when no machine could be reached, so it is not a marker here.)
+grepQuietInverse "copying dependencies to" "$log"
 grepQuietInverse "starting build hook '" "$log"
 
 # --- 2. unparsable `builders` ---------------------------------------
