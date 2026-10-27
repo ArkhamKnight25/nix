@@ -1795,7 +1795,10 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
     bool logLimitHit = remoteLogger->logLimitExceeded;
     remoteLogger.reset();
 
-    buildResult.timesBuilt++;
+    /* Nothing was built when no machine could be reached; the goal goes on
+       to build locally, which counts on its own. */
+    if (!(state->outcome && std::holds_alternative<RemoteMachineUnavailable>(*state->outcome)))
+        buildResult.timesBuilt++;
     buildResult.stopTime = time(nullptr);
 
     if (logLimitHit) {
