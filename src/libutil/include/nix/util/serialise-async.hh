@@ -67,6 +67,8 @@ public:
     {
     }
 
+    ~AsyncFdSource();
+
     size_t readUnbuffered(char * data, size_t len) override
     {
         assert(std::this_thread::get_id() == owner);
@@ -138,6 +140,7 @@ public:
     /* Note that unlike ~FdSink we are intentionally not flushing on
        destruction, because potentially switching contexts during stack
        unwinding is very sketchy. */
+    ~AsyncFdSink();
 
     /**
      * Drop whatever is still buffered and close the descriptor, without
