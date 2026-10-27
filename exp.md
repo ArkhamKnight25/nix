@@ -5,12 +5,14 @@ drop this file, and rewrite every commit message by hand, before any PR.
 
 ## Status (2026-10-28)
 
-- Works and is green on the fork's CI (Linux, macOS, Windows), except two
-  of the newly ported tests (below).
-- Concurrency is proven by test: two remote builds that can only finish
-  together did finish together, on Linux, macOS and the sanitizer build.
-- Open: two failing ported tests; the remote-build VM tests have not run
-  yet; commit messages and code comments still to be rewritten by hand.
+- Proven by a passing test: two remote builds on `ssh-ng` run at the same
+  time from one worker (Linux, macOS, sanitizer build).
+- Not proven yet: local builds progressing while a remote build runs (its
+  test was broken; fixed, CI run 40578612196 pending), and the
+  remote-build VM tests with a real sshd (same run).
+- Known regression, found 2026-10-28: `ssh://` machines now block the
+  worker for their whole build (see "Known problems").
+- Commit messages and code comments are still to be rewritten by hand.
 
 ## Goal
 
@@ -158,9 +160,40 @@ Still blocking, by design or bounded:
   `ssh://` through the blocking path. All seven needed `-vvv`: the lines
   they assert are logged at debug level.
 
+## Test fixes (2026-10-28)
+
+Both failures in run 40570429865 were bugs in the tests, not in Nix:
+- `build-remote-inprocess-local-progress`: its helper builds called
+  `busybox sleep`, but the sandbox shell has no `sleep` ("sleep: applet not
+  found", exit 127), so it never tested anything. Now the steps block on
+  named pipes made with `mkfifo` (each step waits for the previous one, no
+  polling), and `nix-build` runs under `timeout 240`, so a worker that
+  blocks fails the test instead of hanging it.
+- `build-remote-inprocess-error`: it asserted that "remote build done" never
+  appears, but that trace is logged whenever the remote-build coroutine
+  returns, also when no machine could be reached. It now asserts that
+  nothing was copied to a machine ("copying dependencies to" never
+  appears), which only happens after a machine accepted the connection.
+
+## Known problems
+
+- `ssh://` (and `mounted-ssh-ng`, local-store) machines: with the default
+  `build-hook`, every machine goes through the in-process path
+  (`tryRemoteBuilder` calls `selectRemoteMachine`), but only `ssh-ng` gets
+  an asynchronous connection. The others run the whole build on the
+  worker thread, which stalls every other build meanwhile. Upstream ran
+  them in a separate hook process, so for these machines this branch is a
+  regression. Proposed fix, not done yet: use the in-process path only for
+  `ssh-ng` machines and fall back to the hook process for the rest.
+- Each ssh connection's teardown can block the worker for up to 10 s
+  (SIGTERM, then SIGKILL), on every remote build, not only on errors.
+- Open questions under review: cancellation during the buffered-write
+  flush on unwind, suspending from inside the nested fiber that streams
+  outputs, and the 8 MiB stack per remote build in flight.
+
 ## Not verified yet
 
-- The two failing tests above.
+- The two test fixes above, until run 40578612196 finishes.
 - The VM tests `remoteBuilds` (legacy `ssh://`, the blocking path) and
   `remoteBuildsSshNg` (the new path), the only tests with a real sshd.
   One `remoteBuilds` assertion (two builds land on two different
