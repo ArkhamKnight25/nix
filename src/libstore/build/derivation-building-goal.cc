@@ -1393,8 +1393,18 @@ DerivationBuildingGoal::tryRemoteBuilder(const DerivationOptions<StorePath> & dr
 #ifndef _WIN32
     /* Only a configured hook runs as a program. Compare by value:
        `loadConfFile` resets `isOverridden()`. */
-    if (worker.settings.buildHook.isDefault())
-        co_return selectRemoteMachine(drvOptions);
+    if (worker.settings.buildHook.isDefault()) {
+        auto reply = selectRemoteMachine(drvOptions);
+        /* Only an `ssh-ng` machine is spoken to asynchronously. Any other
+           (`ssh://`, a local store) would hold up the worker for the whole
+           build, so it goes to the hook process, as before. The slot is
+           given back first, or the hook would count it as busy. */
+        if (reply.machine && !machineRunsInProcess(*reply.machine->machine)) {
+            reply.machine.reset();
+            co_return RemoteReply{.reply = co_await tryBuildHook(drvOptions)};
+        }
+        co_return reply;
+    }
 #endif
     co_return RemoteReply{.reply = co_await tryBuildHook(drvOptions)};
 }

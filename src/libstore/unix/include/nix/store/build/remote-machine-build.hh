@@ -102,6 +102,13 @@ using RemoteMachineBuildOutcome = std::variant<RemoteMachineBuilt, RemoteMachine
  * result) nor the lack of a machine; a cancelled coroutine throws
  * `SystemError` with `operation_canceled`.
  */
+/**
+ * Whether builds for this machine run in the worker (`ssh-ng`, spoken to
+ * asynchronously). Any other machine goes to the hook process, so that it
+ * does not hold up the worker.
+ */
+bool machineRunsInProcess(const Machine & machine);
+
 RemoteMachineBuildOutcome buildOnRemoteMachine(
     Store & store,
     Machines & machines,

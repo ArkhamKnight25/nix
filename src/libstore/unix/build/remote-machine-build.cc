@@ -117,6 +117,18 @@ static ref<Store> openMachineStore(
     return config->openStore();
 }
 
+bool machineRunsInProcess(const Machine & machine)
+{
+    try {
+        auto config = resolveStoreConfig(machine.completeStoreReference());
+        return !config.dynamic_pointer_cast<const MountedSSHStoreConfig>()
+               && config.dynamic_pointer_cast<const SSHStoreConfig>();
+    } catch (Error &) {
+        /* Let the hook report it, as it always has. */
+        return false;
+    }
+}
+
 /**
  * The hook process set `max-jobs` to 1 before it opened the machine's
  * store, so that a client running with `-j0` could still build on a
