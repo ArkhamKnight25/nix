@@ -180,6 +180,16 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     if (yield.cancelled() != asio::cancellation_type::none)
         throw SystemError(boost::system::error_code(asio::error::operation_aborted), "remote build cancelled");
 
+    /* A terminal cancellation (the goal went away, or the log limit was
+       hit) is delivered once, to the operation pending at that moment. An
+       operation that had already completed, or one started afterwards (a
+       destructor flushing during unwinding), would not see it and could
+       wait forever. With this set, every operation started after the
+       cancellation fails at once. It must be off again before the
+       coroutine completes. */
+    yield.throw_if_cancelled(true);
+    Finally noLongerThrowIfCancelled([&] { yield.throw_if_cancelled(false); });
+
     auto currentLoad = getCurrentLoadDir(store);
 
     /* Connect, moving on to the next machine when one cannot be

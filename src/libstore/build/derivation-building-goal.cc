@@ -1602,10 +1602,12 @@ struct RemoteBuildLogger : Logger
         try {
             if (type == resBuildLogLine) {
                 logSize += s->size() + 1;
-                if (maxLogSize && logSize > maxLogSize && !logLimitExceeded) {
-                    logLimitExceeded = true;
-                    if (onLogLimitExceeded)
-                        onLogLimitExceeded();
+                if (maxLogSize && logSize > maxLogSize) {
+                    if (!logLimitExceeded) {
+                        logLimitExceeded = true;
+                        if (onLogLimitExceeded)
+                            onLogLimitExceeded();
+                    }
                     return;
                 }
                 if (logFile && logFile->sink)
