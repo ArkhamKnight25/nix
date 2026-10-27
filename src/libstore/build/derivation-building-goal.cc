@@ -1290,8 +1290,7 @@ Goal::Co<HookReply> DerivationBuildingGoal::tryBuildHook(const DerivationOptions
         /* Whatever it managed to write before dying. Do not block on it:
            the pipe stays open until `hook` is destroyed on return, and
            this is the worker's thread. */
-        printError(
-            "build hook died unexpectedly: %s", chomp(drainFD(hook->fromHook.readSide.get(), {.block = false})));
+        printError("build hook died unexpectedly: %s", chomp(drainFD(hook->fromHook.readSide.get(), {.block = false})));
         co_return rpDecline;
     }
 
@@ -1424,12 +1423,12 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
        builds clear out is declined rather than postponed when every
        machine is full, and one that can run here right now as well. */
     auto maxBuildJobs = worker.settings.maxBuildJobs.get();
-    bool couldBuildLocally = maxBuildJobs > 0
-                             && (neededSystem == settings.thisSystem.get()
-                                 || settings.extraPlatforms.get().count(neededSystem) > 0)
-                             && std::ranges::all_of(requiredFeatures, [&](const std::string & feature) {
-                                    return worker.store.config.systemFeatures.get().count(feature) != 0;
-                                });
+    bool couldBuildLocally =
+        maxBuildJobs > 0
+        && (neededSystem == settings.thisSystem.get() || settings.extraPlatforms.get().count(neededSystem) > 0)
+        && std::ranges::all_of(requiredFeatures, [&](const std::string & feature) {
+               return worker.store.config.systemFeatures.get().count(feature) != 0;
+           });
     bool canBuildLocally = worker.getNrLocalBuilds() < maxBuildJobs && couldBuildLocally;
 
     auto currentLoad = getCurrentLoadDir(worker.store);
@@ -1671,8 +1670,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
     /* Opens the log file. We close it once woken; whoever drops the
        last reference (the coroutine, if it outlives us) closes it
        otherwise. */
-    auto remoteLogger =
-        std::make_shared<RemoteBuildLogger>(*logger, worker.store, drvPath, worker.settings.maxLogSize);
+    auto remoteLogger = std::make_shared<RemoteBuildLogger>(*logger, worker.store, drvPath, worker.settings.maxLogSize);
 
     auto request = std::make_shared<RemoteMachineBuildRequest>(RemoteMachineBuildRequest{
         .drvPath = drvPath,
@@ -1724,6 +1722,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         std::exception_ptr error;
         asio::cancellation_signal cancel;
     };
+
     auto state = std::make_shared<State>();
 
     struct CancelOnExit
