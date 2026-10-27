@@ -16,9 +16,9 @@
 source common.sh
 
 TODO_NixOS
-# The in-process remote build is new in this version; an older daemon
-# builds through its own hook.
-requireDaemonNewerThan "2.36.0pre20261026"
+# The in-process remote build is in no released daemon, whatever its
+# version number; a released daemon builds through its own hook.
+requireDaemonIsThisVersion
 
 cache="$TEST_ROOT/cache"
 log="$TEST_ROOT/log"
