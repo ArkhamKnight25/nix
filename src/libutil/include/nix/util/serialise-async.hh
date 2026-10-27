@@ -53,6 +53,7 @@ class AsyncFdSource : public BufferedSource
     NativeAsyncStreamDescriptor fd;
     asio::yield_context yield;
     std::thread::id owner = std::this_thread::get_id();
+    bool _good = true;
 
 public:
     /**
@@ -74,11 +75,23 @@ public:
         assert(std::this_thread::get_id() == owner);
         boost::system::error_code ec;
         auto res = fd.async_read_some(asio::mutable_buffer(data, len), yield[ec]);
-        if (ec == boost::asio::error::eof || (!ec && res == 0))
+        if (ec == boost::asio::error::eof || (!ec && res == 0)) {
+            _good = false;
             throw EndOfFile(std::string(*endOfFileError));
-        else if (ec)
+        } else if (ec) {
+            _good = false;
             throw SystemError(ec, "read of %1% bytes", len);
+        }
         return res;
+    }
+
+    /**
+     * False after end of file or an error, as for `FdSource`, so that a
+     * connection pool drops this connection instead of reusing it.
+     */
+    bool good() override
+    {
+        return _good;
     }
 
     /**
@@ -129,6 +142,7 @@ class AsyncFdSink : public BufferedSink
     NativeAsyncStreamDescriptor fd;
     asio::yield_context yield;
     std::thread::id owner = std::this_thread::get_id();
+    bool _good = true;
 
 public:
     AsyncFdSink(asio::io_context & ctx, asio::yield_context yield, AutoCloseFD fd)
@@ -165,10 +179,20 @@ public:
         while (!data.empty()) {
             boost::system::error_code ec;
             auto consumed = fd.async_write_some(asio::buffer(data.data(), data.size()), yield[ec]);
-            if (ec)
+            if (ec) {
+                _good = false;
                 throw SystemError(ec, "write of %1% bytes", data.size());
+            }
             data.remove_prefix(consumed);
         }
+    }
+
+    /**
+     * False after a failed write, as for `FdSink`.
+     */
+    bool good() override
+    {
+        return _good;
     }
 };
 
