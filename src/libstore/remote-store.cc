@@ -393,7 +393,8 @@ ref<const ValidPathInfo> RemoteStore::addCAToStore(
                      << (fim == FileIngestionMethod::NixArchive ? 1 : 0) << printHashAlgo(hashAlgo);
 
             try {
-                conn->to.written = 0;
+                if (auto fdSink = dynamic_cast<FdSink *>(&conn->to))
+                    fdSink->written = 0;
                 connections->incCapacity();
                 {
                     Finally cleanup([&]() { connections->decCapacity(); });
