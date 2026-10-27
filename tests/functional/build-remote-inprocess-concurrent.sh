@@ -53,7 +53,7 @@ NIX
 outPaths=$(nix-build "$TEST_ROOT/concurrent.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" \
   --store "file://$cache" --builders "ssh-ng://localhost - - 2 1" -j0 \
-  --no-out-link -vv 2> "$log")
+  --no-out-link -vvv 2> "$log")
 
 # Both finished, and each saw the other while it was itself running.
 [[ $(echo "$outPaths" | wc -l) -eq 2 ]]
