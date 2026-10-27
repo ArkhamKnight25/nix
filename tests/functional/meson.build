@@ -75,6 +75,7 @@ suites = [
       'build-remote-inprocess-interrupt.sh',
       'build-remote-inprocess-legacy-ssh.sh',
       'build-remote-inprocess-local-progress.sh',
+      'build-remote-inprocess-log-limit.sh',
       'build-remote-inprocess-multi-output.sh',
       'build-remote-inprocess.sh',
       'build-remote-input-addressed.sh',
