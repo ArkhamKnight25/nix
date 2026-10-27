@@ -32,14 +32,16 @@ sync="$TEST_ROOT/sync"
 log="$TEST_ROOT/log"
 rm -rf "$sync"
 mkdir -p "$sync"
+# Named pipes: opening one blocks until the other side opens it, so each
+# step waits for the previous one without polling. The sandbox shell has
+# no `sleep`.
+mkfifo "$sync/remote-started" "$sync/local-done"
 trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
 
 # Visible, writable, under the same path inside each chroot.
 echo "extra-sandbox-paths = $sync" >> "$test_nix_conf"
 
-# Busybox is invoked by path for `sleep`: the chroot has no PATH and the
-# shell may not run applets on its own. `: > f` creates a marker.
-# Bounded: 120 polls of 1 s.
+# Only shell builtins: the sandbox shell has no other applets.
 cat > "$TEST_ROOT/local-progress.nix" <<'NIX'
 { configNix, sync, busybox }:
 let
@@ -49,26 +51,18 @@ let
     builder = busybox;
     args = [ "sh" "-e" "-c" attrs.script ];
   } // removeAttrs attrs [ "script" ]);
-  await = f: ''
-    i=0
-    while [ ! -e ${f} ]; do
-      i=$((i + 1))
-      if [ $i -ge 120 ]; then echo "${f}" >> ${sync}/timeouts; exit 1; fi
-      ${busybox} sleep 1
-    done
-  '';
   remote = mk "inprocess-remote-blocked" {
     requiredSystemFeatures = [ "remote-only" ];
     script = ''
-      : > ${sync}/remote-started
-      ${await "${sync}/local-done"}
+      echo started > ${sync}/remote-started
+      read d < ${sync}/local-done
       echo R > $out
     '';
   };
   local1 = mk "inprocess-local-1" {
     preferLocalBuild = true;
     script = ''
-      ${await "${sync}/remote-started"}
+      read started < ${sync}/remote-started
       echo L1 > $out
     '';
   };
@@ -76,7 +70,7 @@ let
     preferLocalBuild = true;
     script = ''
       read x < ${local1}
-      : > ${sync}/local-done
+      echo done > ${sync}/local-done
       echo $x-L2 > $out
     '';
   };
@@ -95,15 +89,15 @@ NIX
 # derivation requires, as the outer entry does for the selection.
 machine="ssh-ng://localhost?remote-store=$TEST_ROOT/machine1?system-features=remote-only - - 1 1 remote-only"
 
-outPath=$(nix-build "$TEST_ROOT/local-progress.nix" \
+# A worker that blocks on the remote build never starts the local chain,
+# so the pipes would wait forever: bound it.
+outPath=$(timeout 240 nix-build "$TEST_ROOT/local-progress.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" --argstr busybox "$busybox" \
   --store "$TEST_ROOT/machine0" --builders "$machine" --max-jobs 1 \
   --no-out-link -vvv 2> "$log")
 
 # Everything finished, in the order the markers enforce.
 grep 'R L1-L2' "$TEST_ROOT/machine0/$outPath"
-[[ -e "$sync/remote-started" && -e "$sync/local-done" ]]
-[[ ! -e "$sync/timeouts" ]]
 
 # Only the blocked derivation went to the machine; the chain stayed local.
 output=$(nix path-info --store "$TEST_ROOT/machine1" --all)
