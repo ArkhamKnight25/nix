@@ -6,11 +6,10 @@
 # warns that talking to this machine will hold up other builds, and then
 # does so. The build itself succeeds and its output comes back.
 #
-# Known gap, not asserted here: `nix log` for a derivation built this
-# way. The hook had the legacy store write the log to its descriptor 4;
-# inside the worker that descriptor means nothing, so the `log-fd`
-# parameter is dropped and the machine's log lines are not collected
-# (remote-machine-build.cc, openMachineStore).
+# `nix log` for a derivation built this way is not asserted here: the
+# machine's log arrives on ssh's stderr, which a thread drains into the
+# log file (remote-machine-build.cc, RawLogDrain); build-remote.sh
+# checks it for its `ssh://` machine.
 #
 # Setup as in build-remote-inprocess-concurrent.sh: binary-cache client
 # store, `-j0`, the test's own store as the machine, no sandbox.
@@ -26,7 +25,7 @@ trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
 
 # shellcheck disable=SC2016
 outPath=$(nix-build --store "file://$cache" --builders "ssh://localhost - - 1 1" -j0 \
-    --no-out-link -vv -E '
+    --no-out-link -vvv -E '
   with import '"${config_nix}"';
   mkDerivation { name = "inprocess-legacy-ssh"; buildCommand = "echo legacy > $out"; }
 ' 2> "$log")
