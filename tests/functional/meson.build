@@ -72,6 +72,7 @@ suites = [
       'build-remote-inprocess-concurrent.sh',
       'build-remote-inprocess-custom-hook.sh',
       'build-remote-inprocess-error.sh',
+      'build-remote-inprocess-failure.sh',
       'build-remote-inprocess-interrupt.sh',
       'build-remote-inprocess-legacy-ssh.sh',
       'build-remote-inprocess-local-progress.sh',
