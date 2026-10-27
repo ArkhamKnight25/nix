@@ -38,7 +38,10 @@ outPaths=$(timeout 300 nix-build --store "file://$cache" --builders "ssh-ng://lo
 
 [[ $(wc -l <<< "$outPaths") -eq 4 ]] || fail "expected four output paths, got: $outPaths"
 
+# "on '...'" is printed by the hook's path too; "remote build done" only
+# by the in-process one (derivation-building-goal.cc, buildRemotely).
 grepQuiet "on 'ssh-ng://localhost'" "$TEST_ROOT/log"
+grepQuiet "remote build done" "$TEST_ROOT/log"
 grepQuietInverse "starting build hook" "$TEST_ROOT/log"
 
 # Every output is valid in the local store, not only `out`.
