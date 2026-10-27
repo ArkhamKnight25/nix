@@ -64,6 +64,11 @@ wait "$client" || status=$?
 # Not an abort (134) or a segfault (139): an orderly exit after an interrupt.
 [[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
 grepQuietInverse "Nix crashed" "$log"
+# The cancellation finished the remote-build coroutine before the worker
+# was destroyed (worker.cc, ~Worker). The builder check below cannot show
+# this on its own: the machine's daemon also stops the build when its
+# client goes away (MonitorFdHup), which the client's exit guarantees.
+grepQuietInverse "still in flight when the worker went away" "$log"
 
 # The machine's build is gone, with the ssh child that owned it.
 for _ in $(seq 60); do
