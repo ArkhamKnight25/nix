@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
-# `build-hook` naming `nix __build-remote` by path runs the program, not
-# the fork, and it builds. Same setup as `build-hook-builtin-ssh.sh`.
+# `build-hook` naming `nix __build-remote` by path runs that program, and
+# it builds; the worker does not build on the machine itself. Same setup
+# as `build-remote-inprocess-multi-output.sh`: binary-cache client store,
+# `-j0`, the test's own store as an `ssh-ng://localhost` machine.
 
 source common.sh
 
@@ -16,6 +18,6 @@ outPath=$(nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1
 nix path-info --store "file://$cache" "$outPath"
 
 grepQuiet "starting build hook '" "$TEST_ROOT/log"
-grepQuietInverse "starting the built-in build hook" "$TEST_ROOT/log"
+grepQuietInverse "remote build done" "$TEST_ROOT/log"
 grepQuiet "on 'ssh-ng://localhost'" "$TEST_ROOT/log"
 grepQuietInverse "build hook died unexpectedly" "$TEST_ROOT/log"

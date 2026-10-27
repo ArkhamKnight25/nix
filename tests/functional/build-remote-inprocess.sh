@@ -75,7 +75,6 @@ grepQuietInverse "is not an ssh-ng store" "$log"
 # (derivation-building-goal.cc, buildWithHook: `trace("hook build done")`),
 # nor the program's own first words (build-remote.cc, serveBuildHook).
 grepQuietInverse "starting build hook '" "$log"
-grepQuietInverse "starting the built-in build hook" "$log"
 grepQuietInverse "hook build done" "$log"
 grepQuietInverse "got .* remote builders" "$log"
 grepQuietInverse "build hook died unexpectedly" "$log"

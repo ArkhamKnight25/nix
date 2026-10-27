@@ -41,7 +41,6 @@ nix path-info --store "file://$cache" "$outPath"
 grepQuiet "building '.*-inprocess-legacy-ssh.drv' on 'ssh://localhost'" "$log"
 grepQuiet "remote build done" "$log"
 grepQuietInverse "starting build hook '" "$log"
-grepQuietInverse "starting the built-in build hook" "$log"
 
 # Through the blocking path, announced as such. This is printed each
 # time the machine's store is opened, i.e. once per build on it
