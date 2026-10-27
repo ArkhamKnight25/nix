@@ -232,15 +232,19 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
        daemon of protocol 1.32 or newer; older daemons get the base
        class's threaded implementation, which would write to the
        connection from pool threads. Copy one path at a time for those. */
-    {
-        Activity act(*logger, lvlTalkative, actUnknown, fmt("copying dependencies to '%s'", storeUri));
+    auto copyToMachine = [&](const StorePathSet & paths) {
         auto * remote = dynamic_cast<RemoteStore *>(&*sshStore);
         if (remote
             && WorkerProto::Version::Number::fromWire(remote->getProtocol()) < WorkerProto::Version::Number{1, 32})
-            for (auto & path : store.topoSortPaths(req.inputPaths) | std::views::reverse)
+            for (auto & path : store.topoSortPaths(paths) | std::views::reverse)
                 copyStorePath(store, *sshStore, path, NoRepair, NoCheckSigs);
         else
-            copyPaths(store, *sshStore, req.inputPaths, NoRepair, NoCheckSigs, substitute);
+            copyPaths(store, *sshStore, paths, NoRepair, NoCheckSigs, substitute);
+    };
+
+    {
+        Activity act(*logger, lvlTalkative, actUnknown, fmt("copying dependencies to '%s'", storeUri));
+        copyToMachine(req.inputPaths);
     }
 
     uploadLock.close();
@@ -271,7 +275,11 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
            reconstructs at this point. */
         result = sshStore->getBuilder()->buildDerivation(req.drvPath, drv);
     } else {
-        copyClosure(store, *sshStore, StorePathSet{req.drvPath}, NoRepair, NoCheckSigs, substitute);
+        /* `copyClosure` would reach the threaded `addMultipleToStore`
+           for an older daemon, as above. */
+        StorePathSet closure;
+        store.computeFSClosure(StorePathSet{req.drvPath}, closure);
+        copyToMachine(closure);
         auto res = sshStore->getBuilder()->buildPathsWithResults({DerivedPath::Built{
             .drvPath = makeConstantStorePathRef(req.drvPath),
             .outputs = OutputsSpec::All{},
