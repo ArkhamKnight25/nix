@@ -100,6 +100,42 @@ should leak the same way; not yet run. Evidence: branch
   (`remoteBuilds`, `remoteBuildsSshNg`) are not part of this workflow and
   have not run on this branch.
 
+## Does the worker really never block? (code audit, 2026-10-28)
+
+An independent read of the code, item by item, found the claim true with
+exceptions. Fixed since:
+- `ssh-ng://host?max-connections=N` with N > 1 started an ssh control
+  master and waited for it with a blocking read on the worker thread,
+  unbounded on a stalled host. A store opened from a coroutine no longer
+  uses the master.
+- An untrusted client building a non-CA derivation on a daemon older than
+  protocol 1.32 copied the closure through the threaded
+  `addMultipleToStore`, using the coroutine's streams from pool threads
+  (the owner assert aborts). It now goes through the same one-path-at-a-time
+  copy as the inputs.
+
+Still blocking, by design or bounded:
+- Machines that are not `ssh-ng` (`ssh://`, `mounted-ssh-ng`, local
+  stores) block the worker for the whole build, with a warning.
+- Each ssh connection's teardown waits for ssh to exit (SIGTERM, up to
+  10 s before SIGKILL).
+- Local work: `ssh -O check`, the machines `main-lock`, SQLite (busy
+  timeout), hashing and registering a downloaded output, log-file writes.
+
+## Concurrency tests (added 2026-10-28)
+
+- `build-remote-inprocess-concurrent.sh`: two remote builds on one machine
+  each wait for the other's marker, so both must run at once from one
+  worker. A blocking or serialising worker times out.
+- `build-remote-inprocess-local-progress.sh`: a remote build waits for a
+  marker that only a chain of two local builds can write, so the worker
+  must reap and start local builds while the remote build is in flight.
+  Needs a sandbox: Linux only, skipped on macOS.
+- Five more: in-process build and its log, interrupting the client,
+  failures reported, a configured `build-hook` still decides alone, and
+  `ssh://` through the blocking path. All seven needed `-vvv`: the lines
+  they assert are logged at debug level.
+
 ## Not verified yet
 
 - Nothing beyond libutil and libstore has been compiled: not libexpr,
