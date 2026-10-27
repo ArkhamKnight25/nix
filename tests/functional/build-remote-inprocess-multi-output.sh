@@ -9,6 +9,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 
 clearStore
 cache="$TEST_ROOT/cache"
@@ -23,7 +26,7 @@ rm -rf "$cache"
 #
 # `.all` lists one derivation per output, so nix-build prints them all.
 # shellcheck disable=SC2016
-outPaths=$(nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
+outPaths=$(timeout 300 nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
     --no-out-link -vvv -E '
   with import '"${config_nix}"';
   (mkDerivation {

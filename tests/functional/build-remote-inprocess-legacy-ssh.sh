@@ -17,6 +17,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 
 cache="$TEST_ROOT/cache"
 log="$TEST_ROOT/log"
@@ -24,7 +27,7 @@ rm -rf "$cache"
 trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
 
 # shellcheck disable=SC2016
-outPath=$(nix-build --store "file://$cache" --builders "ssh://localhost - - 1 1" -j0 \
+outPath=$(timeout 300 nix-build --store "file://$cache" --builders "ssh://localhost - - 1 1" -j0 \
     --no-out-link -vvv -E '
   with import '"${config_nix}"';
   mkDerivation { name = "inprocess-legacy-ssh"; buildCommand = "echo legacy > $out"; }

@@ -13,6 +13,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 needLocalStore "the build hook is started by the process that builds"
 
 hook="$TEST_ROOT/decline-hook.sh"
@@ -34,7 +37,7 @@ machine="ssh-ng://localhost?remote-store=$TEST_ROOT/machine1"
 rm -rf "$TEST_ROOT/machine1"
 
 # shellcheck disable=SC2016
-outPath=$(nix-build --no-out-link -vvv --max-jobs 1 \
+outPath=$(timeout 300 nix-build --no-out-link -vvv --max-jobs 1 \
   --option build-hook "$hook" --builders "$machine - - 1 1" -E '
   with import '"${config_nix}"';
   mkDerivation { name = "inprocess-custom-hook"; buildCommand = "echo local > $out"; }

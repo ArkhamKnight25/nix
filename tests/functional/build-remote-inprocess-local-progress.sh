@@ -18,6 +18,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 requireSandboxSupport
 requiresUnprivilegedUserNamespaces
 [[ "${busybox-}" =~ busybox ]] || skipTest "no busybox"

@@ -16,6 +16,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 
 cache="$TEST_ROOT/cache"
 log="$TEST_ROOT/log"
@@ -36,7 +39,7 @@ expr='
 # (remote-machine-build.cc: "cannot build on '%s': %s"), disables the
 # machine, finds no other, and hands the build back for a local attempt.
 status=0
-nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
+timeout 300 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 1" \
   2> "$log" || status=$?
 [[ $status -ne 0 ]] || fail "the build succeeded with no machine and no local builds"
@@ -62,7 +65,7 @@ parseError="bad machine specification: failed to convert column #3 in a row"
 
 # 2a. Nowhere to build: the parse error is reported, then the usual failure.
 status=0
-nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
+timeout 300 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "$badBuilders" 2> "$log" || status=$?
 [[ $status -ne 0 ]] || fail "the build succeeded with an unparsable machine list and no local builds"
 [[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
@@ -76,7 +79,7 @@ grepQuietInverse "Nix crashed" "$log"
 # machines"; derivation-building-goal.cc, selectRemoteMachine then
 # declines permanently).
 # shellcheck disable=SC2016
-outPaths=$(nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
+outPaths=$(timeout 300 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
   with import '"${config_nix}"';
   [ (mkDerivation { name = "inprocess-error-local-a"; buildCommand = "echo a > $out"; })
     (mkDerivation { name = "inprocess-error-local-b"; buildCommand = "echo b > $out"; }) ]

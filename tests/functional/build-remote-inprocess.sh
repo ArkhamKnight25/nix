@@ -16,6 +16,9 @@
 source common.sh
 
 TODO_NixOS
+# The in-process remote build is new in this version; an older daemon
+# builds through its own hook.
+requireDaemonNewerThan "2.36.0pre20261026"
 requireSandboxSupport
 requiresUnprivilegedUserNamespaces
 [[ "${busybox-}" =~ busybox ]] || skipTest "no busybox"
@@ -48,7 +51,7 @@ machine="ssh-ng://localhost?remote-store=$TEST_ROOT/machine1"
 # `-j0`: the build may not run locally, so it ran on the machine or not
 # at all. `-vvv` reaches the debug level, where both the hook's and the
 # in-process path's trace lines are printed.
-outPath=$(nix-build -E "$expr" --no-out-link -vvv --max-jobs 0 \
+outPath=$(timeout 300 nix-build -E "$expr" --no-out-link -vvv --max-jobs 0 \
   --store "$TEST_ROOT/machine0" \
   --builders "$machine - - 1 1" \
   2> "$log")
