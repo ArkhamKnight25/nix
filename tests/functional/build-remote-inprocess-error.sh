@@ -74,10 +74,11 @@ grepQuiet "Unable to build with a primary store that isn't a local store" "$log"
 grepQuietInverse "Nix crashed" "$log"
 
 # 2b. Local builds allowed: both derivations build locally, and the
-# parse error is reported once, not once per derivation
-# (worker.cc, Worker::remoteMachines caches the failed parse as "no
-# machines"; derivation-building-goal.cc, selectRemoteMachine then
-# declines permanently).
+# parse error is reported once, not once per derivation. The first goal
+# to ask parses the list (worker.cc, Worker::remoteMachines), finds it
+# empty and clears `worker.tryBuildHook`; the second is then declined by
+# that guard at the top of selectRemoteMachine
+# (derivation-building-goal.cc) without looking at the list again.
 # shellcheck disable=SC2016
 outPaths=$(timeout 300 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
   with import '"${config_nix}"';
