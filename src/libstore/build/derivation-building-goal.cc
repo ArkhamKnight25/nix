@@ -1528,7 +1528,7 @@ struct RemoteBuildLogger : Logger
             for (char c : data) {
                 if (c == '\n') {
                     const Field fields[] = {currentRawLine};
-                    next.result(buildActivity, resBuildLogLine, fields);
+                    next.result(buildActivity, resBuildLogLine, std::span<const Field>(fields));
                     currentRawLine.clear();
                 } else if (c != '\r')
                     currentRawLine += c;
