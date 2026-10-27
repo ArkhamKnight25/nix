@@ -98,7 +98,7 @@ machine="ssh-ng://localhost?remote-store=$TEST_ROOT/machine1?system-features=rem
 outPath=$(nix-build "$TEST_ROOT/local-progress.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" --argstr busybox "$busybox" \
   --store "$TEST_ROOT/machine0" --builders "$machine" --max-jobs 1 \
-  --no-out-link -vv 2> "$log")
+  --no-out-link -vvv 2> "$log")
 
 # Everything finished, in the order the markers enforce.
 grep 'R L1-L2' "$TEST_ROOT/machine0/$outPath"
