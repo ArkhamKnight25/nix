@@ -28,7 +28,7 @@ trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
 
 # shellcheck disable=SC2016
 nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
-    --no-out-link -vv -E '
+    --no-out-link -vvv -E '
   with import '"${config_nix}"';
   mkDerivation {
     name = "inprocess-interrupt";
