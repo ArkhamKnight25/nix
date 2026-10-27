@@ -27,7 +27,7 @@ sync="$TEST_ROOT/sync"
 log="$TEST_ROOT/log"
 rm -rf "$cache" "$sync"
 mkdir -p "$sync"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # Bounded: 1200 polls of 0.1 s, two minutes. `met` records what each
 # builder saw. (Quoted heredoc: `$out` and `$i` are for the builder.)

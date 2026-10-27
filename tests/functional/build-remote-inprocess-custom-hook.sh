@@ -20,7 +20,7 @@ needLocalStore "the build hook is started by the process that builds"
 
 hook="$TEST_ROOT/decline-hook.sh"
 log="$TEST_ROOT/log"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # The reply goes to stdout (hook-instance.cc: stdout is `fromHook`, stderr
 # is merged into it). `exec cat`: keep reading until Nix closes our

@@ -27,7 +27,7 @@ cache="$TEST_ROOT/cache"
 started="$TEST_ROOT/started"
 log="$TEST_ROOT/log"
 rm -rf "$cache" "$started"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # shellcheck disable=SC2016
 nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \

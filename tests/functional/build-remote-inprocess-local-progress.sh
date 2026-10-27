@@ -39,7 +39,7 @@ mkdir -p "$sync"
 # step waits for the previous one without polling. The sandbox shell has
 # no `sleep`.
 mkfifo "$sync/remote-started" "$sync/local-done"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # Visible, writable, under the same path inside each chroot.
 echo "extra-sandbox-paths = $sync" >> "$test_nix_conf"

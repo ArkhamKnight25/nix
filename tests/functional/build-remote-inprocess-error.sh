@@ -23,7 +23,7 @@ requireDaemonNewerThan "2.36.0pre20261026"
 cache="$TEST_ROOT/cache"
 log="$TEST_ROOT/log"
 rm -rf "$cache"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # shellcheck disable=SC2016
 expr='

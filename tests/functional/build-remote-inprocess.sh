@@ -30,7 +30,7 @@ chmod -R +w "$TEST_ROOT/machine"* 2> /dev/null || true
 rm -rf "$TEST_ROOT/machine"*
 
 log="$TEST_ROOT/log"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # One builder script, one line of build output that `nix log` must
 # reproduce. Busybox is the builder because it is the only program the
