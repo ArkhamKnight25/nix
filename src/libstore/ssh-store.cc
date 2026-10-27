@@ -75,7 +75,9 @@ public:
         , async(std::move(async))
         , master(config->createSSHMaster(
               // Use SSH master only if using more than 1 connection.
-              connections->capacity() > 1,
+              // Not from a coroutine: waiting for the master to start
+              // is a blocking read, which would stall the worker.
+              connections->capacity() > 1 && !this->async.has_value(),
               INVALID_DESCRIPTOR,
               /* Opened from a coroutine (`openStoreAsync`): ssh must
                  not prompt. `this->async`: the parameter was moved
