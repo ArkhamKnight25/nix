@@ -1,4 +1,5 @@
 #include "nix/store/build/remote-machine-build.hh"
+#include "nix/store/build.hh"
 #include "nix/store/globals.hh"
 #include "nix/store/local-store.hh"
 #include "nix/store/remote-store.hh"
