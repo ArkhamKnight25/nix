@@ -46,7 +46,7 @@ client=
 # Whatever is left: the client, the stuck builder, our daemon.
 trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2 || true; echo "--- daemon log ---" >&2; cat "$dlog" >&2 || true; }; [[ -z $client ]] || kill -KILL "$client" 2> /dev/null || true; [[ ! -s $sync/stuck-pid ]] || kill -KILL "$(< "$sync/stuck-pid")" 2> /dev/null || true; [[ -z $daemon ]] || kill -KILL "$daemon" 2> /dev/null || true; killDaemon' EXIT
 
-NIX_REMOTE= nix --extra-experimental-features nix-command daemon \
+NIX_REMOTE='' nix --extra-experimental-features nix-command daemon \
     --store "local?root=$dstore" --socket-path "$sock" 2> "$dlog" &
 daemon=$!
 for _ in $(seq 100); do
