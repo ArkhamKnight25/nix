@@ -62,8 +62,7 @@ Worker::Worker(Store & store, Store & evalStore)
 
 Worker::~Worker()
 {
-    /* No more wake-ups from the signal thread: on Windows the port it
-       would post to is destroyed before this callback otherwise. */
+    /* No more wake-ups from the signal thread while we tear down. */
     interruptCallback.reset();
 
     /* Explicitly get rid of all strong pointers now.  After this all
