@@ -1602,6 +1602,11 @@ struct RemoteBuildLogger : Logger
 
     void result(ActivityId act, ResultType type, std::span<const Field> fields) noexcept override
     {
+        /* Past the log limit the build is being cancelled; drop the rest
+           of its output, as the hook path did by closing the hook. */
+        if (logLimitExceeded && (type == resBuildLogLine || type == resSetPhase))
+            return;
+
         next.result(act, type, fields);
 
         if (fields.empty())
@@ -1807,7 +1812,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
 
     /* Nothing was built when no machine could be reached; the goal goes on
        to build locally, which counts on its own. */
-    if (!(state->outcome && std::holds_alternative<RemoteMachineUnavailable>(*state->outcome)))
+    if (!logLimitHit && !(state->outcome && std::holds_alternative<RemoteMachineUnavailable>(*state->outcome)))
         buildResult.timesBuilt++;
     buildResult.stopTime = time(nullptr);
 
