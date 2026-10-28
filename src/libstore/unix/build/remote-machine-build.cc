@@ -240,6 +240,12 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         if (auto * noMachine = std::get_if<NoMachine>(&selection))
             return RemoteMachineUnavailable{*noMachine};
         acquired = std::get<AcquiredMachine>(std::move(selection));
+        /* Only an `ssh-ng` machine is built on here. For any other, give
+           the slot back: the goal asks again, and `tryRemoteBuilder` sends
+           that machine to the hook process instead of blocking the
+           worker. */
+        if (!machineRunsInProcess(*acquired.machine))
+            return RemoteMachineUnavailable{NoMachine::AllBusy};
     }
 
     AutoCloseFD uploadLock = openUploadLock(currentLoad, storeUri);
