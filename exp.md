@@ -50,6 +50,14 @@ on its reply. The goal is to remove that process:
    awaited without blocking. Legacy `ssh://` machines take the existing
    blocking path.
 
+## Relation to step 1
+
+Step 1 (branches `async-hook-queue` = A and `async-hook-pool` = B, each
+with its own exp.md) kept the hook process and only stopped the worker
+from blocking on its reply. This branch is step 2: no hook process for
+`ssh-ng` machines at all; other machines still use the hook process, now
+awaited without blocking as in step 1. It supersedes A and B.
+
 ## Base
 
 - Upstream `master` at 570246c9c (2026-10-26).
