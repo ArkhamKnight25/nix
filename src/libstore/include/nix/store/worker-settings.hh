@@ -124,7 +124,7 @@ public:
         R"(
           The program that performs remote builds, speaking the build-hook protocol over `stdio` with the Nix that requested them.
 
-          With the default value no hook program runs: the building process selects a machine and drives the build over its own connection to it, several machines at a time, without holding up its other builds. An explicit `build-hook = nix __build-remote` runs that same logic as a separate process, as any other value is run; a program is consulted for one derivation at a time, and its reply is awaited while other builds proceed.
+          With the default value, builds for [`ssh-ng`](@docroot@/store/types/ssh-store.md) machines run without a hook program: the building process selects a machine and drives the build over its own connection to it, several machines at a time, without holding up its other builds. For other machines the default runs `nix __build-remote` from the same Nix installation as a separate process. The value is compared with the default, so setting `nix __build-remote` explicitly is the same as the default; give an absolute path to always run a hook program. Any other value is run as a program; it is consulted for one derivation at a time, and its reply is awaited while other builds proceed.
 
           > **Important**
           >
