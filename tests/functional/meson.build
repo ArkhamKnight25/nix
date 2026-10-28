@@ -73,6 +73,7 @@ suites = [
       'build-remote-inprocess-custom-hook.sh',
       'build-remote-inprocess-daemon.sh',
       'build-remote-inprocess-error.sh',
+      'build-remote-inprocess-failover-ssh.sh',
       'build-remote-inprocess-failure.sh',
       'build-remote-inprocess-fallback.sh',
       'build-remote-inprocess-interrupt.sh',
