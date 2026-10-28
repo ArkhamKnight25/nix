@@ -250,20 +250,11 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         /* The goal holds the output paths' locks; `LocalStore::addToStore`
            must not try to take them again. The hook left them in
            `locksHeld` because its process ended here; we are not so
-           lucky. */
+           lucky. The set is process-wide and this copy suspends, so
+           another `addToStore` of the same path in this process would
+           skip its lock meanwhile: keep each path in the set only while
+           it is being copied, to keep that window small. */
         auto * localStore = dynamic_cast<LocalStore *>(&store);
-        Finally releaseLocksHeld([&] {
-            if (localStore) {
-                auto locksHeld(localStore->locksHeld.lock());
-                for (auto & path : missingPaths)
-                    locksHeld->erase(store.printStorePath(path));
-            }
-        });
-        if (localStore) {
-            auto locksHeld(localStore->locksHeld.lock());
-            for (auto & path : missingPaths)
-                locksHeld->insert(store.printStorePath(path)); /* FIXME: ugly */
-        }
 
         /* Not `copyPaths`: it hands the paths to `store.addMultipleToStore`,
            which on a local store runs them through a `ThreadPool` whose
@@ -272,8 +263,16 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
            grows as soon as two paths are pending, so any derivation with
            two missing outputs). One path at a time, references first, as
            `copyPaths` orders them. */
-        for (auto & path : sshStore->topoSortPaths(missingPaths) | std::views::reverse)
+        for (auto & path : sshStore->topoSortPaths(missingPaths) | std::views::reverse) {
+            auto printed = store.printStorePath(path);
+            if (localStore)
+                localStore->locksHeld.lock()->insert(printed); /* FIXME: ugly */
+            Finally releaseLockHeld([&] {
+                if (localStore)
+                    localStore->locksHeld.lock()->erase(printed);
+            });
             copyStorePath(*sshStore, store, path, NoRepair, NoCheckSigs);
+        }
     }
 
     // XXX: Should be done as part of `copyPaths`
