@@ -85,6 +85,13 @@ struct RemoteMachineBuilt
 using RemoteMachineBuildOutcome = std::variant<RemoteMachineBuilt, RemoteMachineUnavailable>;
 
 /**
+ * Whether builds for this machine run in the worker (`ssh-ng`, spoken to
+ * asynchronously). Any other machine goes to the hook process, so that it
+ * does not hold up the worker.
+ */
+bool machineRunsInProcess(const Machine & machine);
+
+/**
  * Build `req.drv` on `acquired.machine`, or on another machine from
  * `machines` if that one cannot be reached: connect, copy the inputs
  * over, build, copy the outputs back into `store`. This is what
@@ -99,16 +106,11 @@ using RemoteMachineBuildOutcome = std::variant<RemoteMachineBuilt, RemoteMachine
  * cannot be reached is disabled in `machines`.
  *
  * Throws on anything that is neither a build failure (reported in the
- * result) nor the lack of a machine; a cancelled coroutine throws
- * `SystemError` with `operation_canceled`.
+ * result) nor the lack of a machine. A cancelled coroutine throws with
+ * `operation_aborted`: a `SystemError` from an operation that was pending
+ * when the cancellation came, or a `boost::system::system_error` from one
+ * started after it.
  */
-/**
- * Whether builds for this machine run in the worker (`ssh-ng`, spoken to
- * asynchronously). Any other machine goes to the hook process, so that it
- * does not hold up the worker.
- */
-bool machineRunsInProcess(const Machine & machine);
-
 RemoteMachineBuildOutcome buildOnRemoteMachine(
     Store & store,
     Machines & machines,
