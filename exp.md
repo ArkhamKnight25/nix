@@ -5,15 +5,21 @@ drop this file, and rewrite every commit message by hand, before any PR.
 
 ## Status (2026-10-29)
 
-- Last fully green CI: run 40747310573 (branch exp-async-inprocess-hook-vm6
-  = c8826152b plus the VM-test CI commit). Everything after c8826152b is
-  being tested in run 40751794388 (7f06ac58d) and the run after it.
+- CI run 40778835806 (branch exp-async-inprocess-hook-vm18 = this branch
+  at 24c847b67 plus the VM-test CI commit): every job passed. Checked in
+  the job logs: Linux 245 OK / 0 fail; sanitizers 245 OK / 0 fail (twice);
+  macOS 218 OK / 0 fail. All 20 remote-build tests OK on Linux and under
+  sanitizers; on macOS 15 OK and 5 SKIP, the five that need a Linux
+  sandbox (inprocess, local-progress, and the upstream build-remote-*
+  family). Both VM tests with a real sshd ran and passed. Daemon
+  compatibility, flake regressions and installer tests passed.
 - Line-by-line reviews of every hunk of this branch against upstream were
-  done on 2026-10-29 (tables under ~/nix-gsoc-notes/review-20261029/, not
-  in this repo). Fixed since 7f06ac58d, each its own commit:
+  done on 2026-10-29, then a review of the reviews (tables under
+  ~/nix-gsoc-notes/review-20261029/, not in this repo). Fixed since
+  7f06ac58d, each its own commit:
   - the worker's wait closed the children's descriptors if anything threw
-    before the asio wrappers were released (real bug; now released from a
-    destructor); the handlers run per wait are bounded;
+    before the asio wrappers were released (real bug; released from a
+    destructor now); the handlers run per wait are bounded;
   - after a postpone, the "waiting for a machine" activity stayed open for
     the whole remote build; the running-builds count was not dropped when
     the machine could not be reached;
@@ -21,19 +27,25 @@ drop this file, and rewrite every commit message by hand, before any PR.
     process) is asked about again at once instead of after a
     poll-interval sleep;
   - the default hook's `nix` is found as `getNixBin` does (NIX_BIN_DIR,
-    next to the program, PATH), so non-ssh-ng machines do not depend on
-    PATH;
+    next to the program, PATH);
   - an operation cancelled before it started is reported as a
-    `SystemError` and marks the stream bad;
-  - the handshake-mismatch drain runs outside the catch handler;
-    `BasicServerConnection` cannot be copied or moved; the logger is not
-    paused while ssh connects in batch mode;
+    `SystemError` and marks the stream bad; the handshake-mismatch drain
+    runs outside the catch handler; `BasicServerConnection` cannot be
+    copied or moved; the logger is not paused while ssh connects in batch
+    mode; the copy-back keeps each path in `locksHeld` only while it is
+    copied;
   - dead code removed: the coroutine's blocking path, the raw-log drain
     and the max-jobs workaround could no longer run once non-ssh-ng
     machines went to the hook process;
-  - tests: background clients killed on failure, the hook interrupt tests
-    trapped, the async handshake unit test with both sides on one loop,
-    inner timeouts below meson's; docs and setting text made true.
+  - five new tests: the worker inside `nix-daemon` building remotely
+    in-process and stopping with its client; copy-back into a local store
+    without a sandbox (runs on macOS); machine slots bounded and all used;
+    a cancellation arriving between two operations; failover from an
+    unreachable ssh-ng machine to an ssh:// one through the hook process,
+    and the log limit there. Plus: background clients killed on failure,
+    the hook interrupt tests trapped, the async handshake unit test with
+    both sides on one loop, inner timeouts below meson's; docs and the
+    setting text made true.
 - Fork without exec: none on this branch. ssh-ng machines are built on
   in-process (no hook process); every other process start is
   `spawnProgram` (fork and exec; on macOS upstream's spawnProgram runs
