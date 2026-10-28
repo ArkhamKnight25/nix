@@ -47,7 +47,6 @@ struct RemoteMachineBuildRequest
      * that it outlives the coroutine however that ends.
      */
     std::shared_ptr<Logger> messageLogger;
-
 };
 
 /**
