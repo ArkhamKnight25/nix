@@ -32,7 +32,7 @@ log="$TEST_ROOT/log"
 rm -rf "$cache" "$sync"
 mkdir -p "$sync"
 # Let a held or stray builder finish whatever happens.
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$sync/release"; [[ -n ${client-} ]] && kill -KILL "$client" 2> /dev/null; killDaemon' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$sync/release"; [[ -n ${client-} ]] && kill -KILL "$client" 2> /dev/null || true; killDaemon' EXIT
 
 # Each wait in a builder is bounded: 1200 polls of 0.1 s, two minutes.
 # The noisy builder starts printing only once the held one is running,

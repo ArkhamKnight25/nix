@@ -31,7 +31,7 @@ log="$TEST_ROOT/log"
 rm -rf "$cache" "$TEST_ROOT/sync-"*
 mkdir -p "$TEST_ROOT/sync-kg" "$TEST_ROOT/sync-stop"
 # Let a held or stray builder finish whatever happens.
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$TEST_ROOT/sync-kg/release" "$TEST_ROOT/sync-stop/release"; [[ -n ${client-} ]] && kill -KILL "$client" 2> /dev/null; killDaemon' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$TEST_ROOT/sync-kg/release" "$TEST_ROOT/sync-stop/release"; [[ -n ${client-} ]] && kill -KILL "$client" 2> /dev/null || true; killDaemon' EXIT
 
 # `tag` keeps the two runs' derivations apart. The failing builder waits
 # until its sibling is running, so both are in flight when it fails.
