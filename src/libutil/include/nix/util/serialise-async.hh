@@ -40,8 +40,8 @@ using NativeAsyncStreamDescriptor =
  * Nor between threads: `yield` suspends the coroutine running on the
  * thread that constructed this object, and a `Source` consumer that
  * reads from another thread (a `ThreadPool` behind `addMultipleToStore`,
- * say) would suspend a coroutine that thread is not running. Debug
- * builds assert on it.
+ * say) would suspend a coroutine that thread is not running. It is
+ * asserted: Nix's builds do not define `NDEBUG`.
  *
  * End of file is reported as `FdSource` reports it: `readUnbuffered`
  * throws `EndOfFile` carrying `endOfFileError`. `Source::operator()`
@@ -74,7 +74,15 @@ public:
     {
         assert(std::this_thread::get_id() == owner);
         boost::system::error_code ec;
-        auto res = fd.async_read_some(asio::mutable_buffer(data, len), yield[ec]);
+        std::size_t res;
+        try {
+            res = fd.async_read_some(asio::mutable_buffer(data, len), yield[ec]);
+        } catch (boost::system::system_error & e) {
+            /* With `throw_if_cancelled` set, an operation started after a
+               cancellation throws here instead of setting `ec`. */
+            _good = false;
+            throw SystemError(e.code(), "read of %1% bytes", len);
+        }
         if (ec == boost::asio::error::eof || (!ec && res == 0)) {
             _good = false;
             throw EndOfFile(std::string(*endOfFileError));
@@ -178,7 +186,13 @@ public:
         assert(std::this_thread::get_id() == owner);
         while (!data.empty()) {
             boost::system::error_code ec;
-            auto consumed = fd.async_write_some(asio::buffer(data.data(), data.size()), yield[ec]);
+            std::size_t consumed;
+            try {
+                consumed = fd.async_write_some(asio::buffer(data.data(), data.size()), yield[ec]);
+            } catch (boost::system::system_error & e) {
+                _good = false;
+                throw SystemError(e.code(), "write of %1% bytes", data.size());
+            }
             if (ec) {
                 _good = false;
                 throw SystemError(ec, "write of %1% bytes", data.size());
