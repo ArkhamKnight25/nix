@@ -32,7 +32,7 @@ wrapper="$TEST_ROOT/machine-daemon"
 rm -rf "$cache" "$sync"
 mkdir -p "$sync"
 # The builder outlives its daemon; let it finish.
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$sync/release"; killDaemon' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$sync/release"; [[ -n ${client-} ]] && kill -KILL "$client" 2> /dev/null; killDaemon' EXIT
 
 # One line per connection opened, should there be more than one.
 cat > "$wrapper" <<EOF

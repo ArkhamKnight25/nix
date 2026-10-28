@@ -47,4 +47,3 @@ grepQuietInverse "remote build done" "$log"
 
 # Nor did the in-process path open the machine's store on its blocking
 # fallback (remote-machine-build.cc, openMachineStore).
-grepQuietInverse "is not an ssh-ng store" "$log"

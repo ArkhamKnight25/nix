@@ -40,6 +40,7 @@ stop() {
     kill -KILL "$client" 2> /dev/null || true
     xargs kill -KILL < "$pids" 2> /dev/null || true
 }
+trap '[[ $? -eq 0 ]] || stop; killDaemon' EXIT
 
 for _ in $(seq 60); do
     [[ -s $pids ]] && break

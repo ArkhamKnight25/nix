@@ -1013,11 +1013,9 @@ TEST_F(WorkerProtoTest, handshake_client_truncated_replay_throws)
 
 #ifndef _WIN32
 /**
- * The client side of the handshake over `AsyncFdSink`/`AsyncFdSource`
- * inside a stackful coroutine, against the server side on blocking
- * streams in a thread: the shape `SSHStoreConfig::openStoreAsync`
- * relies on. Bounded: a stream that blocked the thread instead of
- * suspending would hang here, so the loop runs for five seconds at most.
+ * Both sides of the handshake over `AsyncFdSink`/`AsyncFdSource`, each
+ * in a stackful coroutine on one loop: the client side is the shape
+ * `SSHStoreConfig::openStoreAsync` relies on. Bounded to five seconds.
  */
 TEST_F(WorkerProtoTest, handshake_over_async_streams)
 {
@@ -1037,21 +1035,24 @@ TEST_F(WorkerProtoTest, handshake_over_async_streams)
         },
         asio::use_future);
 
-    std::thread server([&]() {
-        FdSink out{toClient.writeSide.get()};
-        FdSource in{toServer.readSide.get()};
-        WorkerProto::BasicServerConnection::handshake(out, in, defaultVersion);
-        out.flush();
-    });
+    auto serverResult = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSink out(ctx, yield, std::move(toClient.writeSide));
+            AsyncFdSource in(ctx, yield, std::move(toServer.readSide));
+            WorkerProto::BasicServerConnection::handshake(out, in, defaultVersion);
+            out.flush();
+        },
+        asio::use_future);
 
+    /* Both sides on one loop: a stream that blocked the thread instead of
+       suspending would deadlock, and the bounded run would end with the
+       futures not ready. */
     ctx.run_for(std::chrono::seconds(5));
-    bool clientDone = clientResult.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
-    if (clientDone)
-        server.join();
-    else
-        server.detach(); /* blocked on the pipe; it dies with the process */
-    ASSERT_TRUE(clientDone) << "the client did not finish the handshake within five seconds";
-
+    ASSERT_EQ(clientResult.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+        << "the handshake did not finish within five seconds";
+    ASSERT_EQ(serverResult.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    serverResult.get();
     EXPECT_EQ(clientResult.get(), defaultVersion);
 }
 #endif

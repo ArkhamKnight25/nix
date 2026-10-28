@@ -123,7 +123,12 @@ TEST_F(AsyncFdTest, eofThrowsEndOfFile)
 
     runBounded();
     ASSERT_TRUE(ready(read));
-    EXPECT_THROW(read.get(), EndOfFile);
+    try {
+        read.get();
+        FAIL() << "no EndOfFile was thrown";
+    } catch (EndOfFile & e) {
+        EXPECT_THAT(e.what(), testing::HasSubstr("the other side went away"));
+    }
 }
 
 TEST_F(AsyncFdTest, hasDataProbesTheDescriptorThroughTheBase)
