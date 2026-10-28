@@ -356,13 +356,17 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
            lucky. */
         auto * localStore = dynamic_cast<LocalStore *>(&store);
         Finally releaseLocksHeld([&] {
-            if (localStore)
+            if (localStore) {
+                auto locksHeld(localStore->locksHeld.lock());
                 for (auto & path : missingPaths)
-                    localStore->locksHeld.erase(store.printStorePath(path));
+                    locksHeld->erase(store.printStorePath(path));
+            }
         });
-        if (localStore)
+        if (localStore) {
+            auto locksHeld(localStore->locksHeld.lock());
             for (auto & path : missingPaths)
-                localStore->locksHeld.insert(store.printStorePath(path)); /* FIXME: ugly */
+                locksHeld->insert(store.printStorePath(path)); /* FIXME: ugly */
+        }
 
         /* Not `copyPaths`: it hands the paths to `store.addMultipleToStore`,
            which on a local store runs them through a `ThreadPool` whose

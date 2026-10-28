@@ -253,9 +253,11 @@ private:
 public:
 
     /**
-     * Hack for build-remote.cc.
+     * Hack for build-remote.cc. Locked: the in-process remote build adds
+     * to it on the worker thread while substitution threads read it in
+     * `addToStore`.
      */
-    PathSet locksHeld;
+    Sync<PathSet> locksHeld;
 
     /**
      * Initialise the local store, upgrading the schema if
