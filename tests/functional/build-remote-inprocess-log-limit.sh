@@ -78,7 +78,7 @@ NIX
 # Not `timeout 300` alone: the test watches the client while it runs.
 # `$client` is the `timeout` process, which lives exactly as long as the
 # client and exits with its status.
-timeout 300 nix-build "$TEST_ROOT/log-limit.nix" \
+timeout 200 nix-build "$TEST_ROOT/log-limit.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" \
   --store "file://$cache" --builders "ssh-ng://localhost - - 2 1" -j0 \
   --keep-going --max-build-log-size 2000 \

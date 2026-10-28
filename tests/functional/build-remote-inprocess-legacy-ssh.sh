@@ -28,7 +28,7 @@ rm -rf "$cache"
 trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
 
 # shellcheck disable=SC2016
-outPath=$(timeout 300 nix-build --store "file://$cache" --builders "ssh://localhost - - 1 1" -j0 \
+outPath=$(timeout 200 nix-build --store "file://$cache" --builders "ssh://localhost - - 1 1" -j0 \
     --no-out-link -vvv -E '
   with import '"${config_nix}"';
   mkDerivation { name = "inprocess-legacy-ssh"; buildCommand = "echo legacy > $out"; }

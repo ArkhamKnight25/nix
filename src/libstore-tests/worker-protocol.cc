@@ -1,3 +1,5 @@
+#include <chrono>
+#include <future>
 #include <thread>
 
 #include <nlohmann/json.hpp>
@@ -1014,7 +1016,8 @@ TEST_F(WorkerProtoTest, handshake_client_truncated_replay_throws)
  * The client side of the handshake over `AsyncFdSink`/`AsyncFdSource`
  * inside a stackful coroutine, against the server side on blocking
  * streams in a thread: the shape `SSHStoreConfig::openStoreAsync`
- * relies on. Skeleton: not yet run anywhere.
+ * relies on. Bounded: a stream that blocked the thread instead of
+ * suspending would hang here, so the loop runs for five seconds at most.
  */
 TEST_F(WorkerProtoTest, handshake_over_async_streams)
 {
@@ -1041,8 +1044,13 @@ TEST_F(WorkerProtoTest, handshake_over_async_streams)
         out.flush();
     });
 
-    ctx.run();
-    server.join();
+    ctx.run_for(std::chrono::seconds(5));
+    bool clientDone = clientResult.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+    if (clientDone)
+        server.join();
+    else
+        server.detach(); /* blocked on the pipe; it dies with the process */
+    ASSERT_TRUE(clientDone) << "the client did not finish the handshake within five seconds";
 
     EXPECT_EQ(clientResult.get(), defaultVersion);
 }

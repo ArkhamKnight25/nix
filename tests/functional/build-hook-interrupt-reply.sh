@@ -7,6 +7,7 @@
 source common.sh
 
 TODO_NixOS
+requireDaemonIsThisVersion
 
 hook="$TEST_ROOT/hook.sh"
 pidFile="$TEST_ROOT/hook-pid"

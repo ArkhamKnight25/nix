@@ -44,7 +44,7 @@ chmod +x "$wrapper"
 
 # Bounded: 1200 polls of 0.1 s, two minutes.
 # shellcheck disable=SC2016
-timeout 300 nix-build --store "file://$cache" -j0 --no-out-link -vvv \
+timeout 200 nix-build --store "file://$cache" -j0 --no-out-link -vvv \
     --builders "ssh-ng://localhost?remote-program=$wrapper - - 1 1" -E '
   with import '"${config_nix}"';
   mkDerivation {

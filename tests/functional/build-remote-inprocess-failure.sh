@@ -76,7 +76,7 @@ NIX
 startClient() {
     local tag=$1
     shift
-    timeout 300 nix-build "$TEST_ROOT/failure.nix" \
+    timeout 200 nix-build "$TEST_ROOT/failure.nix" \
       --argstr configNix "$config_nix" --argstr sync "$TEST_ROOT/sync-$tag" --argstr tag "$tag" \
       --store "file://$cache" --builders "ssh-ng://localhost - - 2 1" -j0 \
       --no-out-link -vvv "$@" 2> "$log" &

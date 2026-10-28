@@ -26,7 +26,7 @@ rm -rf "$cache"
 #
 # `.all` lists one derivation per output, so nix-build prints them all.
 # shellcheck disable=SC2016
-outPaths=$(timeout 300 nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
+outPaths=$(timeout 200 nix-build --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
     --no-out-link -vvv -E '
   with import '"${config_nix}"';
   (mkDerivation {

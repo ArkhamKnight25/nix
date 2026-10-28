@@ -52,7 +52,7 @@ builtins.genList (k: mkDerivation {
 }) n
 NIX
 
-outPaths=$(timeout 300 nix-build "$TEST_ROOT/many.nix" \
+outPaths=$(timeout 200 nix-build "$TEST_ROOT/many.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" --arg n "$n" \
   --store "file://$cache" --builders "ssh-ng://localhost - - $n 1" -j0 \
   --no-out-link -vvv 2> "$log")

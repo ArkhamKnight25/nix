@@ -38,7 +38,7 @@ unreachable="ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 
 reachable="ssh-ng://localhost - - 1 1"
 
 # shellcheck disable=SC2016
-outPath=$(timeout 300 nix-build --store "file://$cache" -j0 --no-out-link -vvv \
+outPath=$(timeout 200 nix-build --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "$unreachable ; $reachable" -E '
   with import '"${config_nix}"';
   let

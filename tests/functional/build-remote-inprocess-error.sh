@@ -39,7 +39,7 @@ expr='
 # (remote-machine-build.cc: "cannot build on '%s': %s"), disables the
 # machine, finds no other, and hands the build back for a local attempt.
 status=0
-timeout 300 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
+timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 1" \
   2> "$log" || status=$?
 [[ $status -ne 0 ]] || fail "the build succeeded with no machine and no local builds"
@@ -65,7 +65,7 @@ parseError="bad machine specification: failed to convert column #3 in a row"
 
 # 2a. Nowhere to build: the parse error is reported, then the usual failure.
 status=0
-timeout 300 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
+timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "$badBuilders" 2> "$log" || status=$?
 [[ $status -ne 0 ]] || fail "the build succeeded with an unparsable machine list and no local builds"
 [[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
@@ -80,7 +80,7 @@ grepQuietInverse "Nix crashed" "$log"
 # that guard at the top of selectRemoteMachine
 # (derivation-building-goal.cc) without looking at the list again.
 # shellcheck disable=SC2016
-outPaths=$(timeout 300 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
+outPaths=$(timeout 200 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
   with import '"${config_nix}"';
   [ (mkDerivation { name = "inprocess-error-local-a"; buildCommand = "echo a > $out"; })
     (mkDerivation { name = "inprocess-error-local-b"; buildCommand = "echo b > $out"; }) ]

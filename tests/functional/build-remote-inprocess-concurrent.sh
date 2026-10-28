@@ -53,7 +53,7 @@ in
 ]
 NIX
 
-outPaths=$(timeout 300 nix-build "$TEST_ROOT/concurrent.nix" \
+outPaths=$(timeout 200 nix-build "$TEST_ROOT/concurrent.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" \
   --store "file://$cache" --builders "ssh-ng://localhost - - 2 1" -j0 \
   --no-out-link -vvv 2> "$log")

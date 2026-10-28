@@ -1,8 +1,10 @@
 #include "nix/util/serialise-async.hh"
+#include "nix/util/finally.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/memory-source-accessor.hh"
 #include "nix/util/tests/gmock-matchers.hh"
 
+#include <csignal>
 #include <boost/asio/bind_cancellation_slot.hpp>
 #include <boost/asio/cancellation_signal.hpp>
 #include <boost/asio/error.hpp>
@@ -78,17 +80,20 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
     EXPECT_THAT(accessor, ::nix::testing::HasContents(CanonPath::root, contents));
 }
 
-TEST_F(AsyncFdTest, writeToInvalidFd)
+TEST_F(AsyncFdTest, writeToClosedPipe)
 {
     Pipe pipe;
     pipe.create();
+    /* No reader: the write fails with EPIPE. Writing to such a pipe also
+       raises SIGPIPE, which Nix programs ignore; do the same here. */
+    auto oldHandler = ::signal(SIGPIPE, SIG_IGN);
+    Finally restoreHandler([&] { ::signal(SIGPIPE, oldHandler); });
+    pipe.readSide.close();
 
     auto write = asio::spawn(
         ctx,
         [&](asio::yield_context yield) {
-            Descriptor fd = pipe.writeSide.get();
             AsyncFdSink sink(ctx, yield, std::move(pipe.writeSide));
-            ::close(fd);
             sink << "hello";
             sink.flush();
         },
