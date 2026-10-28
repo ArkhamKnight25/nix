@@ -3,52 +3,45 @@
 Working notes for this branch. Written with Claude Code. Not for upstream:
 drop this file, and rewrite every commit message by hand, before any PR.
 
-## Status (2026-10-28, evening)
+## Status (2026-10-29)
 
-- CI run 40590731731 (branch exp-async-inprocess-hook-vm4 = this branch at
-  cb10dfda5 plus the VM-test CI commit): every job passed. Checked in the
-  logs, not only the job status:
-  - Ubuntu 241 OK / 0 fail; sanitizers 242 OK / 0 fail (twice); macOS
-    214 OK / 0 fail.
-  - All 15 remote-build tests pass on Linux; on macOS 13 pass and 2 skip by
-    design (they need a sandbox).
-  - VM tests with a real sshd: `remote-builds` (ssh://) and
-    `remote-builds-ssh-ng` pass.
-  - Daemon-compatibility suites pass: against released 2.34.9 and 2.35.3
-    daemons, and against this branch's own daemon (`againstSelf`); installer tests and flake regressions pass.
-- Proven by tests: two and sixteen remote builds at once from one worker;
-  local builds progressing while a remote build runs; the log limit
-  stopping one remote build from the client while a sibling continues;
-  failures with and without --keep-going; skipping an unreachable machine;
-  a machine dying mid-build; ssh:// going through the hook process.
-- Run 40596773169 (this branch at d2c791782, plus the VM-test CI commit):
-  every job passed as well. The in-process tests ran in the main suite (13
-  OK) and in the daemon-compatibility suite against this branch's own
-  daemon (12 OK), and skipped against the released 2.34 and 2.35 daemons.
-- Correction: the cancelled runs 40578612196 and 40587960075 hung for one
-  reason only. The in-process tests' EXIT traps replaced the framework's
-  `killDaemon`, leaking the test daemon, and meson waited on it. The
-  daemon-compatibility suite labelled "2.36.0" is `againstSelf` (this
-  branch's own daemon, packaging/hydra.nix), not a released 2.36.0 as the
-  commit message of d2c791782 says. That commit's guard
-  (`requireDaemonIsThisVersion`) is still right for released daemons, but
-  the trap fix is what ended the hang.
-
-## Goal
-
-Today the worker forks a build hook per remote-build decision and blocks
-on its reply. The goal is to remove that process:
-
-1. The worker never blocks on a remote machine. It waits on the remote
-   store's connection descriptor in its own event loop, next to local
-   builds.
-2. The default hook's work (pick a machine, open the `ssh-ng` store, copy
-   inputs, build, copy outputs back) runs inside the worker as a coroutine
-   over `AsyncFdSource` / `AsyncFdSink`, so many remote builds can be in
-   flight from one worker.
-3. A configured `build-hook` program keeps working as before, and is
-   awaited without blocking. Legacy `ssh://` machines take the existing
-   blocking path.
+- Last fully green CI: run 40747310573 (branch exp-async-inprocess-hook-vm6
+  = c8826152b plus the VM-test CI commit). Everything after c8826152b is
+  being tested in run 40751794388 (7f06ac58d) and the run after it.
+- Line-by-line reviews of every hunk of this branch against upstream were
+  done on 2026-10-29 (tables under ~/nix-gsoc-notes/review-20261029/, not
+  in this repo). Fixed since 7f06ac58d, each its own commit:
+  - the worker's wait closed the children's descriptors if anything threw
+    before the asio wrappers were released (real bug; now released from a
+    destructor); the handlers run per wait are bounded;
+  - after a postpone, the "waiting for a machine" activity stayed open for
+    the whole remote build; the running-builds count was not dropped when
+    the machine could not be reached;
+  - a machine that hands the build back (unreachable, or one for the hook
+    process) is asked about again at once instead of after a
+    poll-interval sleep;
+  - the default hook's `nix` is found as `getNixBin` does (NIX_BIN_DIR,
+    next to the program, PATH), so non-ssh-ng machines do not depend on
+    PATH;
+  - an operation cancelled before it started is reported as a
+    `SystemError` and marks the stream bad;
+  - the handshake-mismatch drain runs outside the catch handler;
+    `BasicServerConnection` cannot be copied or moved; the logger is not
+    paused while ssh connects in batch mode;
+  - dead code removed: the coroutine's blocking path, the raw-log drain
+    and the max-jobs workaround could no longer run once non-ssh-ng
+    machines went to the hook process;
+  - tests: background clients killed on failure, the hook interrupt tests
+    trapped, the async handshake unit test with both sides on one loop,
+    inner timeouts below meson's; docs and setting text made true.
+- Fork without exec: none on this branch. ssh-ng machines are built on
+  in-process (no hook process); every other process start is
+  `spawnProgram` (fork and exec; on macOS upstream's spawnProgram runs
+  some C++ between fork and exec, which is upstream's doing).
+- Still blocking the worker briefly, by design or bounded: the machines
+  `main-lock`, `ssh -O check` on each connect, SQLite and local-store
+  work, the 10 s grace for a `localhost` daemon on teardown, the
+  post-build hook's wait.
 
 ## Relation to step 1
 
@@ -168,7 +161,8 @@ exceptions. Fixed since:
 
 Still blocking, by design or bounded:
 - Machines that are not `ssh-ng` (`ssh://`, `mounted-ssh-ng`, local
-  stores) block the worker for the whole build, with a warning.
+  stores) go to the hook process, whose reply is awaited without
+  blocking (since 13d2f1b7d).
 - Each ssh connection's teardown waits for ssh to exit (SIGTERM, up to
   10 s before SIGKILL).
 - Local work: `ssh -O check`, the machines `main-lock`, SQLite (busy
@@ -219,9 +213,6 @@ Fixed on 2026-10-28 after line-by-line reviews (each its own commit):
 - The async streams report a broken connection through `good()`.
 
 Still open (from the reviews):
-- `LocalStore::locksHeld` is modified on the worker thread while
-  substitution threads may read it (data race, new with the in-process
-  copy-back).
 - The thread's current activity can leak between coroutines across a
   suspension (progress-bar parentage, cosmetic).
 - Exception state (`std::uncaught_exceptions`) is per thread, not per
@@ -231,8 +222,8 @@ Still open (from the reviews):
   it although the build ran on the next one.
 - `~Worker` waits only 5 s for in-flight remote builds.
 - Each ssh-ng connect runs `ssh -O check` synchronously.
-- Explicitly setting `build-hook = nix __build-remote` still takes the
-  in-process path (compared by value), contrary to the setting's text.
+- Explicitly setting `build-hook = nix __build-remote` equals the default
+  (compared by value); the setting's text says so now.
 - History: two `fixup!` commits target the wrong commit and must be
   retargeted before squashing; Sergei Zimmerman's commit carries a message
   and date that are not his.
