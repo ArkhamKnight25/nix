@@ -96,6 +96,7 @@ void RemoteStore::initConnection(Connection & conn)
 
         StringSink saved;
         TeeSource tee(conn.from, saved);
+        bool protocolMismatch = false;
         try {
             // The following features aren't in the `latest` constant because it is
             // shared with the daemon, which only adds the features under certain conditions.
@@ -109,8 +110,13 @@ void RemoteStore::initConnection(Connection & conn)
             if (conn.protoVersion.number < WorkerProto::minimum.number)
                 throw Error("the Nix daemon version is too old");
         } catch (SerialisationError & e) {
-            /* In case the other side is waiting for our input, close
-               it. */
+            protocolMismatch = true;
+        }
+        if (protocolMismatch) {
+            /* Outside the handler: on an asynchronous connection the
+               drain suspends the coroutine, and the exception machinery
+               is per thread, not per coroutine. In case the other side
+               is waiting for our input, close it. */
             conn.closeWrite();
             {
                 NullSink nullSink;

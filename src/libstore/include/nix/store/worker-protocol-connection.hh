@@ -161,6 +161,10 @@ struct WorkerProto::BasicServerConnection : WorkerProto::BasicConnection
     {
     }
 
+    /* `to` and `from` refer into this object. */
+    BasicServerConnection(const BasicServerConnection &) = delete;
+    BasicServerConnection(BasicServerConnection &&) = delete;
+
     /**
      * Establishes connection, negotiating version.
      *
