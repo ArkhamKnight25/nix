@@ -10,11 +10,17 @@
 #include <boost/asio/error.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/use_future.hpp>
+#include <boost/system/system_error.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cerrno>
 #include <chrono>
 #include <future>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace nix {
 
@@ -201,6 +207,103 @@ TEST_F(AsyncFdTest, terminalCancellationAbortsASuspendedRead)
         EXPECT_EQ(e.ec(), std::error_code(asio::error::make_error_code(asio::error::operation_aborted)));
     } catch (...) {
         FAIL() << "expected a SystemError carrying operation_aborted";
+    }
+}
+
+/* A terminal cancellation is delivered once, to the operation pending
+   when it is emitted. `buildOnRemoteMachine` can be cancelled while it
+   has none: its coroutine is between two operations, or a completion is
+   already queued. The emit then only records the cancellation in the
+   coroutine's state, and the next operation is started with a fresh
+   slot that nobody will ever signal. With `throw_if_cancelled(true)`,
+   as `buildOnRemoteMachine` sets it, starting that operation throws
+   `operation_aborted` instead.
+
+   Here the coroutine yields once (`post`), and the cancellation runs
+   while it is suspended there, posted before the coroutine's own
+   resumption and so run before it. The write that follows targets a
+   full pipe that nobody reads: without `throw_if_cancelled(true)` it
+   would wait for room forever, the coroutine would not complete within
+   the bounded run, and the test would fail on `completed`. */
+TEST_F(AsyncFdTest, terminalCancellationBetweenOperationsFailsTheNextOne)
+{
+    Pipe pipe;
+    pipe.create();
+
+    /* Fill the pipe, through the raw descriptor, until not even one more
+       byte fits. Chunks first, then single bytes for what is left. */
+    {
+        int fd = pipe.writeSide.get();
+        int flags = ::fcntl(fd, F_GETFL);
+        ASSERT_NE(flags, -1);
+        ASSERT_NE(::fcntl(fd, F_SETFL, flags | O_NONBLOCK), -1);
+        std::array<char, 4096> chunk{};
+        for (size_t size : {chunk.size(), size_t(1)}) {
+            while (true) {
+                auto n = ::write(fd, chunk.data(), size);
+                if (n > 0)
+                    continue;
+                ASSERT_EQ(n, -1);
+                if (errno == EINTR)
+                    continue;
+                ASSERT_TRUE(errno == EAGAIN || errno == EWOULDBLOCK) << "errno " << errno;
+                break;
+            }
+        }
+    }
+
+    asio::cancellation_signal cancel;
+    std::exception_ptr error;
+    bool completed = false;
+    bool suspended = false;
+    bool cancelledWhileSuspended = false;
+    bool resumed = false;
+
+    asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            yield.throw_if_cancelled(true);
+            /* Off again before the coroutine completes, as in
+               `buildOnRemoteMachine`. */
+            Finally noLongerThrowIfCancelled([&] { yield.throw_if_cancelled(false); });
+
+            AsyncFdSink sink(ctx, yield, std::move(pipe.writeSide));
+
+            /* Queued ahead of our own resumption below. */
+            asio::post(ctx, [&]() {
+                cancelledWhileSuspended = suspended;
+                cancel.emit(asio::cancellation_type::terminal);
+            });
+            suspended = true;
+            asio::post(ctx, yield);
+            suspended = false;
+            resumed = true;
+
+            sink << "x";
+            sink.flush();
+        },
+        asio::bind_cancellation_slot(cancel.slot(), [&](std::exception_ptr e) {
+            completed = true;
+            error = e;
+        }));
+
+    runBounded();
+
+    ASSERT_TRUE(resumed);
+    ASSERT_TRUE(cancelledWhileSuspended);
+    ASSERT_TRUE(completed) << "the write after the cancellation is still waiting";
+    ASSERT_TRUE(error);
+    const auto aborted = asio::error::make_error_code(asio::error::operation_aborted);
+    try {
+        std::rethrow_exception(error);
+    } catch (boost::system::system_error & e) {
+        /* Thrown by the coroutine on starting the operation. */
+        EXPECT_EQ(e.code(), aborted);
+    } catch (SystemError & e) {
+        /* Or the operation's own `ec`, should Boost report it there. */
+        EXPECT_EQ(e.ec(), std::error_code(aborted));
+    } catch (...) {
+        FAIL() << "expected the write to fail with operation_aborted";
     }
 }
 
