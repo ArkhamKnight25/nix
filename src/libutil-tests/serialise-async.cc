@@ -133,7 +133,7 @@ TEST_F(AsyncFdTest, eofThrowsEndOfFile)
         read.get();
         FAIL() << "no EndOfFile was thrown";
     } catch (EndOfFile & e) {
-        EXPECT_THAT(e.what(), testing::HasSubstr("the other side went away"));
+        EXPECT_THAT(e.what(), ::testing::HasSubstr("the other side went away"));
     }
 }
 
