@@ -62,6 +62,10 @@ Worker::Worker(Store & store, Store & evalStore)
 
 Worker::~Worker()
 {
+    /* No more wake-ups from the signal thread: on Windows the port it
+       would post to is destroyed before this callback otherwise. */
+    interruptCallback.reset();
+
     /* Explicitly get rid of all strong pointers now.  After this all
        goals that refer to this worker should be gone.  (Otherwise we
        are in trouble, since goals may call childTerminated() etc. in
@@ -521,21 +525,44 @@ void Worker::waitForInput()
        `Child` would avoid that, at the price of threading it through
        `childStarted`.
 
-       asio sets `O_NONBLOCK` on a descriptor when it starts the first
-       operation on it, and `release()` only hands the descriptor back
-       (`reactive_descriptor_service::release` deregisters it from the
-       reactor and nothing more), so without help every child pipe would
-       stay non-blocking for good. `iterate` reads only after readiness,
-       but it treats `EAGAIN` as a failed read, and a `readLine` or
-       `drainFD` on one of these descriptors elsewhere must keep
-       blocking as it always did. Remember each descriptor's flags and
-       put them back once asio has let go. */
+       asio may set `O_NONBLOCK` on a descriptor it operates on (some
+       versions do so on the first operation; `async_wait` alone may
+       not), and `release()` only hands the descriptor back, so a child
+       pipe could be left non-blocking. `iterate` reads only after
+       readiness, but it treats `EAGAIN` as a failed read, and a
+       `readLine` or `drainFD` on one of these descriptors elsewhere must
+       keep blocking as it always did. Remember each descriptor's flags
+       and put them back once asio has let go.
+
+       These descriptors belong to the children and to the wake-up pipe,
+       not to this wait: a `stream_descriptor` that still holds one when
+       it is destroyed closes it. `Watched` gives every descriptor back
+       in its destructor, so that a throw here never closes one. */
     {
         struct Watched
         {
             asio::posix::stream_descriptor descriptor;
             Descriptor fd;
             int flags;
+
+            Watched(asio::io_context & ctx, Descriptor fd, int flags)
+                : descriptor(ctx, fd)
+                , fd(fd)
+                , flags(flags)
+            {
+            }
+
+            Watched(const Watched &) = delete;
+            Watched(Watched &&) = delete;
+
+            ~Watched()
+            {
+                if (descriptor.is_open()) {
+                    boost::system::error_code ec;
+                    descriptor.cancel(ec);
+                    descriptor.release();
+                }
+            }
         };
 
         std::list<Watched> watched;
@@ -543,7 +570,7 @@ void Worker::waitForInput()
             int flags = fcntl(entry.fd, F_GETFL);
             if (flags == -1)
                 throw SysError("getting the flags of descriptor %d", entry.fd);
-            watched.push_back(Watched{asio::posix::stream_descriptor(ioContext, entry.fd), entry.fd, flags});
+            watched.emplace_back(ioContext, entry.fd, flags);
             watched.back().descriptor.async_wait(
                 asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
         }
@@ -554,8 +581,13 @@ void Worker::waitForInput()
         else
             ioContext.run_one();
         /* Run whatever else became ready at the same time, which
-           includes resuming coroutines whose I/O completed. */
-        ioContext.poll();
+           includes resuming coroutines whose I/O completed. Bounded: a
+           coroutine whose reads keep completing at once (a copy over a
+           fast pipe) would otherwise keep the loop here, and the
+           children's pipes and timeouts would not be looked at until
+           its data ran dry. */
+        for (unsigned int n = 0; n < 64 && ioContext.poll_one(); ++n)
+            ;
 
         for (auto & w : watched) {
             w.descriptor.cancel();
