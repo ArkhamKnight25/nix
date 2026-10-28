@@ -71,6 +71,7 @@ suites = [
       'build-remote-content-addressed-floating.sh',
       'build-remote-inprocess-concurrent.sh',
       'build-remote-inprocess-custom-hook.sh',
+      'build-remote-inprocess-daemon.sh',
       'build-remote-inprocess-error.sh',
       'build-remote-inprocess-failure.sh',
       'build-remote-inprocess-fallback.sh',
