@@ -516,7 +516,13 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
             co_return co_await buildWithHook(inputPaths, initialOutputs, std::move(outputLocks));
         };
 
-        {
+        /* A machine that accepted may still hand the build back: it could
+           not be reached (and is disabled now), or the next machine in
+           line is one the hook process speaks to. Ask again at once then,
+           as the hook moved on to the next machine within one request;
+           a `postpone` is reported as such and waits below. */
+        for (bool askAgain = true; askAgain;) {
+            askAgain = false;
             PathLocks outputLocks;
             if (co_await acquireResources(outputLocks))
                 co_return Result{BuildResult::Success{
@@ -530,8 +536,7 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
                 /* Yes, a machine will do it. Wait until it is done. */
                 if (auto result = co_await buildRemote(std::move(reply), std::move(outputLocks)))
                     co_return result;
-                /* No machine took it after all; ask again below, after
-                   a while, as after a `postpone`. */
+                askAgain = true;
                 break;
             case rpDecline:
                 // We should do it ourselves.
