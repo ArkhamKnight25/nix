@@ -83,6 +83,7 @@ suites = [
       'build-remote-inprocess-machine-dies.sh',
       'build-remote-inprocess-many.sh',
       'build-remote-inprocess-multi-output.sh',
+      'build-remote-inprocess-slots.sh',
       'build-remote-inprocess.sh',
       'build-remote-input-addressed.sh',
       'build-remote-trustless-should-fail-0.sh',
