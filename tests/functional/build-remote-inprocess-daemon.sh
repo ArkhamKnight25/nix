@@ -84,13 +84,14 @@ in
 }
 NIX
 
-# `root=`: a `unix://` client reads `.drv` files from the physical store
-# directory itself (nix-build looks the outputs up locally after the
-# build), so it must see the daemon's chroot store the way the daemon does.
-outPaths=$(timeout 200 nix-build "$TEST_ROOT/daemon.nix" \
+# `nix build`, not `nix-build`: the latter reads the `.drv` files from the
+# physical store directory itself to print the outputs, and the daemon's
+# store is a chroot store the client has no view of. `nix build` takes the
+# output paths from the daemon's build results.
+outPaths=$(timeout 200 nix build -f "$TEST_ROOT/daemon.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" \
-  --store "unix://$sock?root=$dstore" --builders "ssh-ng://localhost - - 2 1" -j0 \
-  --no-out-link -vvv 2> "$log")
+  --store "unix://$sock" --builders "ssh-ng://localhost - - 2 1" -j0 \
+  --no-link --print-out-paths -vvv 2> "$log")
 
 [[ $(echo "$outPaths" | wc -l) -eq 2 ]]
 [[ $(grep -c '^ok$' "$sync/met") -eq 2 ]]
