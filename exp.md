@@ -38,6 +38,20 @@ drop this file, and rewrite every commit message by hand, before any PR.
   in-process (no hook process); every other process start is
   `spawnProgram` (fork and exec; on macOS upstream's spawnProgram runs
   some C++ between fork and exec, which is upstream's doing).
+- A review of the five reviews (code evidence only) confirmed most
+  findings, overturned six, and found one under-rated: during copy-back,
+  a path sits in the process-wide `locksHeld` set across suspensions, so
+  another `addToStore` of that path in the same process could skip its
+  lock meanwhile. The window is now one path at a time; it is not gone.
+  Also noted: dropping a hook (`~HookInstance`) waits for it up to
+  `build-hook-kill-timeout` on the worker thread, as upstream; and the
+  SIGTERM grace for `localhost` applies to any `ssh-ng://localhost` or
+  `ssh://localhost` connection, not only in-process ones.
+- Calls on the worker thread with no bound in code, between accepting an
+  ssh-ng machine and the build's end: the machines `main-lock` flock,
+  `ssh -O check` on each connect, and the GC-socket handshake in
+  `addTempRoot` during copy-back. Everything else that blocks is local
+  work bounded by data size.
 - Still blocking the worker briefly, by design or bounded: the machines
   `main-lock`, `ssh -O check` on each connect, SQLite and local-store
   work, the 10 s grace for a `localhost` daemon on teardown, the
