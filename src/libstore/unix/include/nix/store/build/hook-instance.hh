@@ -69,9 +69,10 @@ struct HookInstance
 
     /**
      * Run the program named by the `build-hook` setting, in a child
-     * process of this one. With the setting at its default there is no
-     * hook process at all: the worker builds on remote machines itself
-     * (`DerivationBuildingGoal::buildRemotely`).
+     * process of this one. With the setting at its default this is
+     * `nix __build-remote` from the same installation, and it is started
+     * only for machines that are not `ssh-ng` stores: those the worker
+     * builds on itself (`DerivationBuildingGoal::buildRemotely`).
      */
     static std::unique_ptr<HookInstance> external(const Strings & buildHook, std::chrono::milliseconds timeout);
 

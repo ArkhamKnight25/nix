@@ -4,6 +4,7 @@
 #include "nix/util/strings.hh"
 #include "nix/util/executable-path.hh"
 #include "nix/util/current-process.hh"
+#include "nix/util/environment-variables.hh"
 #include "nix/util/util.hh"
 
 #include <chrono>
@@ -49,18 +50,23 @@ std::unique_ptr<HookInstance> HookInstance::external(const Strings & _buildHook,
     if (buildHookArgs.empty())
         throw Error("'build-hook' setting is empty");
 
-    /* The default hook is this Nix's own `nix __build-remote`. Run the
-       `nix` next to the running program, as upstream did by setting the
-       absolute path as the default, rather than whatever `nix` comes first
-       on PATH. The setting itself keeps its default value: the worker
-       builds on ssh-ng machines in-process only when it is the default. */
+    /* The default hook is this Nix's own `nix __build-remote`. Find that
+       `nix` the way `getNixBin` does for the self-invocation: `NIX_BIN_DIR`
+       if set, else next to the running program, else on PATH. (Upstream
+       set the absolute path as the setting's default; here the setting
+       keeps its default value, which is how the worker knows to build on
+       ssh-ng machines in-process.) */
     std::optional<std::filesystem::path> selfNix;
-    if (buildHookArgs == Strings{"nix", "__build-remote"})
-        if (auto self = getSelfExe()) {
+    if (buildHookArgs == Strings{"nix", "__build-remote"}) {
+        if (auto binDir = getEnvNonEmpty("NIX_BIN_DIR"))
+            selfNix = std::filesystem::path{*binDir} / "nix";
+        else if (auto self = getSelfExe()) {
+            std::error_code ec;
             auto nix = self->parent_path() / "nix";
-            if (std::filesystem::exists(nix))
+            if (std::filesystem::exists(nix, ec))
                 selfNix = nix;
         }
+    }
 
     std::filesystem::path buildHook = buildHookArgs.front();
     buildHookArgs.pop_front();
