@@ -84,9 +84,12 @@ in
 }
 NIX
 
+# `real=`: a `unix://` client reads `.drv` files from the physical store
+# directory itself (nix-build looks the outputs up locally after the
+# build), and the daemon's store is the chroot one.
 outPaths=$(timeout 200 nix-build "$TEST_ROOT/daemon.nix" \
   --argstr configNix "$config_nix" --argstr sync "$sync" \
-  --store "unix://$sock" --builders "ssh-ng://localhost - - 2 1" -j0 \
+  --store "unix://$sock?real=$dstore/nix/store" --builders "ssh-ng://localhost - - 2 1" -j0 \
   --no-out-link -vvv 2> "$log")
 
 [[ $(echo "$outPaths" | wc -l) -eq 2 ]]
