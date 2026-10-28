@@ -175,8 +175,11 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
 
     auto conn = std::make_unique<Connection>();
 
+    /* ssh may prompt (a passphrase, a host key) and needs the terminal;
+       in batch mode it fails instead, and the pause would only hide
+       every other build's progress while it connects. */
     std::unique_ptr<Logger::Suspension> loggerSuspension;
-    if (!fakeSSH && !useMaster) {
+    if (!fakeSSH && !useMaster && !batchMode) {
         loggerSuspension = std::make_unique<Logger::Suspension>(logger->suspend());
     }
 
