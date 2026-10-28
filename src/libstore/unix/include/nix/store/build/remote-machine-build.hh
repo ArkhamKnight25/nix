@@ -48,20 +48,14 @@ struct RemoteMachineBuildRequest
      */
     std::shared_ptr<Logger> messageLogger;
 
-    /**
-     * Where a machine's build output goes when it arrives as bytes
-     * rather than as log messages: a legacy `ssh://` machine's build log
-     * is ssh's stderr. Called from a thread of its own, since the store
-     * producing it blocks the worker's thread; see `openMachineStore`.
-     * Empty: the output is not collected.
-     */
-    std::function<void(std::string_view)> rawBuildOutput;
 };
 
 /**
- * No machine took the build after all: the one reserved could not be
- * reached, nor any other. `AllBusy` is what the hook replied `postpone`
- * to, `WrongType` what it replied `decline` to.
+ * No machine ran the build: the reserved one could not be reached, and
+ * either none other fits, every other is full (`AllBusy`), or the next
+ * one in line is not an `ssh-ng` store and belongs to the hook process
+ * (also reported as `AllBusy`; the goal asks `tryRemoteBuilder` again,
+ * which tells these apart).
  */
 struct RemoteMachineUnavailable
 {

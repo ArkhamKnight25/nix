@@ -143,9 +143,9 @@ private:
      * connection, the copies and the build run as a stackful coroutine
      * on `worker.ioContext` (see `buildOnRemoteMachine`), so the worker
      * keeps running other goals meanwhile; this goal sleeps until the
-     * coroutine is done. Returns `std::nullopt` when no machine could be
-     * reached after all, in which case the caller builds locally, as it
-     * would after a hook's `decline`.
+     * coroutine is done. Returns `std::nullopt` when the machine could
+     * not be reached after all (or the next one is for the hook
+     * process); the caller then asks `tryRemoteBuilder` again.
      */
     Co<std::optional<Result>> buildRemotely(
         AcquiredMachine machine,

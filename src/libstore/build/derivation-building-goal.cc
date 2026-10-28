@@ -554,7 +554,8 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
         {
             // First attempt was postponed. Retry in a loop with an activity
             // that lives until accept or decline.
-            Activity act(
+            std::optional<Activity> act;
+            act.emplace(
                 *logger,
                 lvlWarn,
                 actBuildWaiting,
@@ -581,10 +582,17 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
                     co_return std::nullopt;
                 }
 
+                /* The wait is over, whatever the build's outcome. */
+                act.reset();
                 if (auto result = co_await buildRemote(std::move(reply), std::move(outputLocks)))
                     co_return result;
                 /* No machine took it after all; `buildRemote` released
                    the locks. Ask again. */
+                act.emplace(
+                    *logger,
+                    lvlWarn,
+                    actBuildWaiting,
+                    fmt("waiting for a machine to build '%s'", Magenta(worker.store.printStorePath(drvPath))));
             }
         }
 
@@ -1495,7 +1503,7 @@ struct RemoteBuildLogger : Logger
     std::function<void()> onLogLimitExceeded;
 
     /**
-     * The build's activity, on which `rawOutput` reports lines.
+     * The build's activity, under which its log lines are reported.
      */
     ActivityId buildActivity = 0;
     std::string currentRawLine;
@@ -1515,43 +1523,6 @@ struct RemoteBuildLogger : Logger
     void closeLogFile()
     {
         logFile.reset();
-    }
-
-    /**
-     * Build output that arrives as bytes rather than as messages (a
-     * legacy `ssh://` machine's, from ssh's stderr): kept in the log
-     * file as it is, each complete line reported on `buildActivity`, as
-     * `BuildLog` did for the hook. Called from the drain's thread, the
-     * only one to touch the log file for such a machine; the drain is
-     * gone before the goal wakes. Past `max-log-size` the output is
-     * dropped and the limit reported when the build ends; the store that
-     * produces it cannot be interrupted from here.
-     */
-    void rawOutput(std::string_view data)
-    {
-        try {
-            logSize += data.size();
-            if (maxLogSize && logSize > maxLogSize) {
-                if (!logLimitExceeded) {
-                    logLimitExceeded = true;
-                    if (onLogLimitExceeded)
-                        onLogLimitExceeded();
-                }
-                return;
-            }
-            if (logFile && logFile->sink)
-                (*logFile->sink)(data);
-            for (char c : data) {
-                if (c == '\n') {
-                    const Field fields[] = {currentRawLine};
-                    next.result(buildActivity, resBuildLogLine, std::span<const Field>(fields));
-                    currentRawLine.clear();
-                } else if (c != '\r')
-                    currentRawLine += c;
-            }
-        } catch (...) {
-            ignoreExceptionInDestructor();
-        }
     }
 
     void stop() override
@@ -1702,7 +1673,6 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         .inputPaths = inputPaths,
         .wantedOutputs = std::move(wantedOutputs),
         .messageLogger = remoteLogger,
-        .rawBuildOutput = [remoteLogger](std::string_view data) { remoteLogger->rawOutput(data); },
     });
 
     buildResult.startTime = time(nullptr); // inexact
@@ -1733,8 +1703,9 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
        and if we are destroyed first (`Worker::run` unwinding on an
        interrupt or a failed sibling), `cancelOnExit` cancels it. Its
        pending operation then fails and it unwinds on the loop, releasing
-       the connection and so the ssh child (SIGTERM, then SIGKILL after
-       ten seconds; see `SSHMaster::startCommand`). It may thus outlive
+       the connection and so the ssh child (SIGKILL; for `localhost`,
+       where that child is the daemon itself, SIGTERM and ten seconds'
+       grace; see `SSHMaster::startCommand`). It may thus outlive
        this goal and must not refer to it; the worker outlives it, since
        `~Worker` drains the loop. */
     struct State
@@ -1771,8 +1742,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
 
     /* Boost's default coroutine stack is small (128 KiB on most
        platforms). This one runs SQLite, NAR hashing and the compression
-       of the log file, and for a machine that is not `ssh-ng` a whole
-       nested `Worker` through the blocking store. A protected stack is
+       of the log file. A protected stack is
        reserved, not committed, so a generous size costs address space
        only, and a guard page turns an overflow into a fault instead of
        silent corruption. */
@@ -1855,9 +1825,10 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
     }
 
     if (std::get_if<RemoteMachineUnavailable>(&*state->outcome)) {
-        /* Every candidate was tried and none could be reached. The hook
-           would have declined at this point (or postponed, had the last
-           one been merely full); build locally. */
+        /* The machine could not be reached, and the next one is full,
+           missing, or one for the hook process. Nothing ran: the caller
+           asks `tryRemoteBuilder` again. */
+        mcRunningBuilds.reset();
         outputLocks.unlock();
         co_return std::nullopt;
     }

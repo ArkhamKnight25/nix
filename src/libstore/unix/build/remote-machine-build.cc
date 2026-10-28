@@ -22,99 +22,24 @@
 namespace nix {
 
 /**
- * Reads what a legacy `ssh://` machine writes to ssh's stderr, which is
- * the remote build's log, and hands it to `sink`, as the hook's parent
- * did from the pipe on the hook's descriptor 4. A thread of its own does
- * the reading: that store blocks the worker's thread for the whole of
- * `buildDerivation`, so nothing else could, and the ssh child would
- * stall once the pipe filled. The write side goes to the store as
- * `log-fd` and is inherited by its ssh children as their stderr;
- * destroying this closes our copy and waits for the reader, which ends
- * when the last child holding one has gone. Destroy it after the store.
- */
-struct RawLogDrain
-{
-    Pipe pipe;
-    std::thread reader;
-
-    RawLogDrain(std::function<void(std::string_view)> sink)
-    {
-        pipe.create();
-        reader = std::thread([fd = pipe.readSide.get(), sink = std::move(sink)]() {
-            try {
-                std::array<char, 4096> buf;
-                while (true) {
-                    ssize_t n = ::read(fd, buf.data(), buf.size());
-                    if (n == 0)
-                        break;
-                    if (n == -1) {
-                        if (errno == EINTR)
-                            continue;
-                        break;
-                    }
-                    sink(std::string_view(buf.data(), n));
-                }
-            } catch (...) {
-                ignoreExceptionInDestructor();
-            }
-        });
-    }
-
-    ~RawLogDrain()
-    {
-        pipe.writeSide.close();
-        if (reader.joinable())
-            reader.join();
-    }
-};
-
-/**
- * Open the machine's store for use from this coroutine. Only `ssh-ng`
- * knows how to suspend instead of block; any other kind (the legacy
- * `ssh://`, a local store) is opened as usual and blocks the worker
- * while it is talked to. `mounted-ssh-ng` has its own store class and
- * is left to the blocking path too.
- *
- * `rawLog` is created on demand for a machine whose build log arrives
- * as bytes, and reused for the next such machine.
+ * Open the machine's store for use from this coroutine. Only an `ssh-ng`
+ * store knows how to suspend instead of block, which is why
+ * `machineRunsInProcess` sends every other machine to the hook process;
+ * a machine of another kind getting here is a bug.
  */
 static ref<Store> openMachineStore(
-    const RemoteMachineBuildRequest & req,
-    const Machine & machine,
-    std::unique_ptr<RawLogDrain> & rawLog,
-    bool & blocking,
-    asio::io_context & ctx,
-    asio::yield_context yield)
+    const RemoteMachineBuildRequest & req, const Machine & machine, asio::io_context & ctx, asio::yield_context yield)
 {
     auto storeUri = machine.completeStoreReference();
-
-    /* `Machine::completeStoreReference` points the legacy `ssh://`
-       store's `log-fd` at descriptor 4: the hook's pipe to its parent,
-       where ssh's stderr, carrying the remote build's log, was read by
-       the parent and written into the log file. Here that pipe is ours.
-       Left unset, ssh's stderr would be inherited (`SSHMaster::startCommand`
-       redirects it only when `logFD` is given) and the build's output
-       would land raw on the worker's stderr, around the logger. */
-    if (storeUri.params.contains("log-fd")) {
-        if (req.rawBuildOutput) {
-            if (!rawLog)
-                rawLog = std::make_unique<RawLogDrain>(req.rawBuildOutput);
-            storeUri.params["log-fd"] = std::to_string(rawLog->pipe.writeSide.get());
-        } else
-            storeUri.params.erase("log-fd");
-    }
+    /* `Machine::completeStoreReference` points a legacy `ssh://` store's
+       `log-fd` at the hook's descriptor 4, which does not exist here. */
+    storeUri.params.erase("log-fd");
 
     auto config = resolveStoreConfig(std::move(storeUri));
-    if (!config.dynamic_pointer_cast<const MountedSSHStoreConfig>())
-        if (auto sshConfig = config.dynamic_pointer_cast<const SSHStoreConfig>()) {
-            blocking = false;
-            return sshConfig->openStoreAsync(ctx, yield, req.messageLogger);
-        }
-    blocking = true;
-    warn(
-        "remote builder '%s' is not an ssh-ng store; talking to it will hold up other builds",
-        machine.storeUri.render());
-    return config->openStore();
+    auto sshConfig = config.dynamic_pointer_cast<const SSHStoreConfig>();
+    if (!sshConfig || config.dynamic_pointer_cast<const MountedSSHStoreConfig>())
+        throw Error("remote builder '%s' is not an ssh-ng store", machine.storeUri.render());
+    return sshConfig->openStoreAsync(ctx, yield, req.messageLogger);
 }
 
 bool machineRunsInProcess(const Machine & machine)
@@ -128,29 +53,6 @@ bool machineRunsInProcess(const Machine & machine)
         return false;
     }
 }
-
-/**
- * The hook process set `max-jobs` to 1 before it opened the machine's
- * store, so that a client running with `-j0` could still build on a
- * machine that builds in this process (`auto`, `local?root=`), or on a
- * local daemon, which takes the client's `max-jobs` when it connects.
- * Here the setting belongs to the whole process, so it is raised only
- * around calls on such a store, which do not yield to the worker.
- */
-struct MachineMaxBuildJobs
-{
-    unsigned int saved = settings.getWorkerSettings().maxBuildJobs.get();
-
-    MachineMaxBuildJobs()
-    {
-        settings.getWorkerSettings().maxBuildJobs.assign(1);
-    }
-
-    ~MachineMaxBuildJobs()
-    {
-        settings.getWorkerSettings().maxBuildJobs.assign(saved);
-    }
-};
 
 /**
  * The hook waited for the upload lock with `alarm(15 * 60)` around a
@@ -205,21 +107,14 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     auto currentLoad = getCurrentLoadDir(store);
 
     /* Connect, moving on to the next machine when one cannot be
-       reached, as `serveBuildHook` does. The drain is declared before
-       the store so that it is destroyed after it, once the ssh children
-       writing to it are gone. */
-    std::unique_ptr<RawLogDrain> rawLog;
+       reached, as `serveBuildHook` does. */
     std::shared_ptr<Store> sshStore;
-    bool blocking = false;
     std::string storeUri;
     while (true) {
         storeUri = acquired.machine->storeUri.render();
         try {
             Activity act(*logger, lvlTalkative, actUnknown, fmt("connecting to '%s'", storeUri));
-            sshStore = openMachineStore(req, *acquired.machine, rawLog, blocking, ctx, yield);
-            std::optional<MachineMaxBuildJobs> maxBuildJobs;
-            if (blocking)
-                maxBuildJobs.emplace();
+            sshStore = openMachineStore(req, *acquired.machine, ctx, yield);
             sshStore->connect();
             break;
         } catch (Interrupted &) {
@@ -294,9 +189,6 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     //
     // This condition mirrors that: that code enforces the "rules" outlined there;
     // we do the best we can given those "rules".
-    std::optional<MachineMaxBuildJobs> maxBuildJobs;
-    if (blocking)
-        maxBuildJobs.emplace();
     if (trustedOrLegacy || type(drv).isCA()) {
         /* `req.drv` already carries its input derivations' outputs as
            input sources, which is the derivation `serveBuildHook`
@@ -316,7 +208,6 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         assert(res.size() == 1);
         result = std::move(res[0]);
     }
-    maxBuildJobs.reset();
 
     if (result.tryGetFailure()) {
         if (settings.keepFailed)
