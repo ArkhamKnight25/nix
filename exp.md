@@ -14,8 +14,8 @@ drop this file, and rewrite every commit message by hand, before any PR.
     design (they need a sandbox).
   - VM tests with a real sshd: `remote-builds` (ssh://) and
     `remote-builds-ssh-ng` pass.
-  - Daemon-compatibility suites against released 2.34, 2.35 and 2.36.0
-    daemons pass; installer tests and flake regressions pass.
+  - Daemon-compatibility suites pass: against released 2.34.9 and 2.35.3
+    daemons, and against this branch's own daemon (`againstSelf`); installer tests and flake regressions pass.
 - Proven by tests: two and sixteen remote builds at once from one worker;
   local builds progressing while a remote build runs; the log limit
   stopping one remote build from the client while a sibling continues;
