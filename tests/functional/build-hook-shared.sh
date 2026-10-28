@@ -7,7 +7,7 @@ source common.sh
 
 # Older daemons start a hook per ready goal, or log hook starts
 # differently.
-requireDaemonNewerThan "2.36.0pre20261026"
+requireDaemonIsThisVersion
 TODO_NixOS
 
 clearStore
