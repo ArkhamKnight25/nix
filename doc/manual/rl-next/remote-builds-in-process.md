@@ -8,12 +8,7 @@ Other machine types (`ssh://`, local stores) and custom `build-hook` programs st
 
 For `ssh-ng` machines:
 
-- A remote build that fails is reported with the remote machine's own failure status, so `nix-build` exits with 100, 101 or 102 as it does for a local failure.
-  The hook flattened every remote failure to a generic one (exit code 1).
-- A builder that cannot be reached is disabled for the rest of the invocation, as the hook disabled it for its own lifetime.
-- `ssh` runs with `-oBatchMode=yes` for these connections: it fails rather than prompts.
-  A builder's key must not need a passphrase, or must be in an agent, as the manual already asks; the hook could never prompt either.
-
-A program named by `build-hook` is still run, with the same protocol.
-While it chose a machine and connected to it, Nix could not start a local build or notice one finishing; its reply is now awaited while the other builds proceed.
-It is consulted for one derivation at a time, and `decline-permanently` still stops Nix from consulting it again for the rest of the invocation.
+- A failed remote build keeps the remote's failure status, so `nix-build` exits with 100, 101 or 102 as for a local failure, instead of 1.
+- A machine that cannot be reached is skipped for the rest of that build; later builds try it again.
+- Each build opens its own `ssh` connection; connection sharing (`ControlMaster`) is not used.
+- `ssh` runs with `-oBatchMode=yes` and fails instead of prompting, so a builder's key must work without a passphrase prompt (for example through an agent).

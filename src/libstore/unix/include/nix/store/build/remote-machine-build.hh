@@ -92,24 +92,10 @@ using RemoteMachineBuildOutcome = std::variant<RemoteMachineBuilt, RemoteMachine
 bool machineRunsInProcess(const Machine & machine);
 
 /**
- * Build `req.drv` on `acquired.machine`, or on another machine from
- * `machines` if that one cannot be reached: connect, copy the inputs
- * over, build, copy the outputs back into `store`. This is what
- * `serveBuildHook` does once it has accepted a build, as a function
- * that runs inside a stackful coroutine: `yield` is that coroutine's,
- * `ctx` the loop it is suspended on. Every read from or write to the
- * machine suspends the coroutine; only the local store's own work
- * (reading the inputs, writing the outputs) occupies the thread.
- *
- * The slot reserved by `acquired` stays reserved until this returns; it
- * is what other builds count as the machine's load. A machine that
- * cannot be reached is disabled in `machines`.
- *
- * Throws on anything that is neither a build failure (reported in the
- * result) nor the lack of a machine. A cancelled coroutine throws with
- * `operation_aborted`: a `SystemError` from an operation that was pending
- * when the cancellation came, or a `boost::system::system_error` from one
- * started after it.
+ * Build `req.drv` on `acquired.machine`, or on another of `machines` if
+ * that one cannot be reached, suspending the coroutine `yield` on `ctx`
+ * at every read and write. Keeps the slot of `acquired` until it returns.
+ * When cancelled, throws with `operation_aborted`.
  */
 RemoteMachineBuildOutcome buildOnRemoteMachine(
     Store & store,

@@ -1,36 +1,8 @@
 #!/usr/bin/env bash
 
-# Failing over from an `ssh-ng` machine to an `ssh://` one, and the log
-# limit on the `ssh://` machine's hook.
-#
-# 1. Two machines: an `ssh-ng` one that cannot be started (its
-#    `remote-program` does not exist; preferred, with the higher speed
-#    factor, machine-selection.cc, machineIsBetter) and an `ssh://` one.
-#    The in-process coroutine fails to connect, disables the `ssh-ng`
-#    machine, selects the next, finds it is not one it builds on, and
-#    hands the build back (remote-machine-build.cc, buildOnRemoteMachine).
-#    The goal asks again at once and sends the `ssh://` machine to the
-#    hook process (derivation-building-goal.cc, tryRemoteBuilder). The
-#    hook parses the machine list itself (build-remote.cc,
-#    serveBuildHook), so it also tries the `ssh-ng` machine first and
-#    reports it in the same words before it moves on: the message
-#    appears twice, once from each. A coroutine that tried the `ssh://`
-#    machine itself would open it on the blocking fallback
-#    (remote-machine-build.cc, openMachineStore) and say so.
-# 2. `--max-build-log-size` on an `ssh://` machine, which only the hook
-#    builds on. The hook's parent counts what arrives on the hook's log
-#    descriptor and kills the hook past the limit (buildWithHook); the
-#    legacy protocol also passes the limit to the machine, whose own
-#    build stops there (legacy-ssh-store.cc, buildSettings; nix-store
-#    --serve). Whichever comes first, the client reports the limit in
-#    the words of derivation-building-goal.cc, logLimitExceeded, and
-#    exits with 1 (the hook's failure is a `MiscFailure`, the limit a
-#    `LogLimitExceeded`; neither sets an exit-status flag, build-result.cc).
-#    The noisy builder stops on its own well past the limit, so a limit
-#    that was not enforced would show as a successful build.
-#
-# Setup as in build-remote-inprocess-legacy-ssh.sh: binary-cache client
-# store, `-j0`, the test's own store as the machine, no sandbox.
+# An unreachable `ssh-ng` machine fails over to an `ssh://` one, which the
+# build hook builds on, and `--max-build-log-size` holds for that hook.
+# Binary-cache client store and `-j0`, so nothing builds locally.
 
 source common.sh
 

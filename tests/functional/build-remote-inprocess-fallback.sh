@@ -1,25 +1,9 @@
 #!/usr/bin/env bash
 
-# An unreachable machine is skipped, and stays skipped. Two `ssh-ng`
-# machines: the first cannot be started (its `remote-program` does not
-# exist), the second is the test's own store. Two derivations, one
-# depending on the other, so they are built one after the other.
-#
-# The first is offered the unreachable machine: the first selection
-# prefers it (machine-selection.cc, machineIsBetter: equal load, higher
-# speed factor). Its coroutine reports the failure, disables the machine
-# and moves on to the next one itself (remote-machine-build.cc,
-# buildOnRemoteMachine), so one coroutine builds it. The second
-# derivation is never offered the disabled machine: the error is printed
-# once, and two coroutines run in all. A coroutine that gave up after the
-# first machine would make the goal ask again and run a third; a machine
-# list that forgot the failure would print the error twice.
-#
-# The "building ... on" line is not checked: it names the machine first
-# selected, not the one that built.
-#
-# Setup as in build-remote-inprocess-concurrent.sh: binary-cache client
-# store, `-j0`, the test's own store as the machine, no sandbox.
+# An unreachable machine is passed over only for the build that could not
+# reach it, and the same coroutine moves on to the next machine. Two
+# chained builds, so each one tries the unreachable machine first.
+# Binary-cache client store and `-j0`, so nothing builds locally.
 
 source common.sh
 

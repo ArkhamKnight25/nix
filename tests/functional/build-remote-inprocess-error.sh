@@ -1,17 +1,8 @@
 #!/usr/bin/env bash
 
-# Failures on the in-process path are reported, named, and do not crash.
-#
-# 1. A machine whose `remote-program` cannot be started: the error names
-#    the machine, the machine is given up on, and with `-j0` (and a
-#    binary-cache client store, so nothing can run locally) the build
-#    fails with the usual explanation.
-# 2. A `builders` line that does not parse: the error is reported once
-#    per worker, the machine list is treated as empty, and the build
-#    runs locally where that is allowed (`-j1`, local store) or fails
-#    where it is not (`-j0`, binary-cache store).
-#
-# No sandbox: nothing is ever built on a machine here.
+# Failures on the in-process path are reported and do not crash. An
+# unreachable machine is named and given up on, and a `builders` line that
+# does not parse fails the build with exit status 1.
 
 source common.sh
 
@@ -35,11 +26,7 @@ expr='
 
 # A `remote-program` that cannot be started.
 
-# With `localhost` the program is run directly (ssh.cc, fakeSSH), so a
-# missing program is an exec failure in the child: the connection sees
-# end-of-file in the handshake, `buildOnRemoteMachine` reports it
-# (remote-machine-build.cc: "cannot build on '%s': %s"), disables the
-# machine, finds no other, and hands the build back for a local attempt.
+# With `localhost` the program runs without ssh, so the handshake fails.
 status=0
 timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 1" \
