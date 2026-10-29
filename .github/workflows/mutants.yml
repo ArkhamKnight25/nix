@@ -1,0 +1,55 @@
+name: "mutants"
+
+# Throwaway: mutation testing of the in-process remote builds. One job per
+# mutant: plant the bug, build, run the functional and unit tests.
+on:
+  push:
+    branches:
+      - 'ci/mutants*'
+
+permissions: read-all # zizmor: ignore[excessive-permissions]
+
+jobs:
+  mutant:
+    strategy:
+      fail-fast: false
+      matrix:
+        mutant:
+          - baseline
+          - M6-loglimit
+          - M12-cancel-late
+    name: ${{ matrix.mutant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Plant the mutant
+      run: python3 ci-mutants/apply.py "$MUTANT" && git diff --stat
+      env:
+        MUTANT: ${{ matrix.mutant }}
+    - uses: ./.github/actions/install-nix-action # zizmor: ignore[self-repository]
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        dogfood: true
+        extra_nix_config: "sandbox = true"
+    - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    - name: Build and run the tests
+      run: |
+        set +e
+        nix build --file ci/gha/tests/wrapper.nix \
+          componentTests.nix-functional-tests componentTests.nix-util-tests-run componentTests.nix-store-tests-run \
+          --arg withInstrumentation false --argstr stdenv stdenv -L --keep-going > build.log 2>&1
+        status=$?
+        echo "MUTANT $MUTANT build exit=$status"
+        grep -E "^(nix-functional-tests|nix-util-tests|nix-store-tests)[^>]*> *(Ok|Fail|Expected Fail|Unexpected Pass|Skipped|Timeout): " build.log | sed "s/^/SUMMARY /"
+        grep -E "> *[0-9]+/[0-9]+ .* (FAIL|TIMEOUT) " build.log | sed "s/^/FAILED /" | head -40
+        grep -E "\[  FAILED  \]" build.log | sed "s/^/GTEST /" | sort -u | head -20
+        grep -E "error: (builder for|Cannot build) '[^']*-(nix-(util|store|expr|main|cmd|fetchers|flake)-[0-9][^']*)'" build.log | sed "s/^/COMPILE /" | head -5
+        grep -n -B2 -A60 -E "test failed" build.log | head -400
+        tail -40 build.log
+        exit 0
+      env:
+        MUTANT: ${{ matrix.mutant }}
