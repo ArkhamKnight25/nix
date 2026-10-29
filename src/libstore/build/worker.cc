@@ -73,6 +73,7 @@ Worker::~Worker()
        ssh children) before the loop goes away. Bounded, so that one that
        ignores the cancellation cannot keep the process from exiting. */
     try {
+        PushActivity keepActivity(getCurActivity());
         ioContext.restart();
         ioContext.run_for(std::chrono::seconds(5));
         if (!ioContext.stopped())
@@ -541,6 +542,9 @@ void Worker::waitForInput()
             watched.back().descriptor.async_wait(
                 asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
         }
+
+        /* Resumed coroutines set the current activity; keep the worker's. */
+        PushActivity keepActivity(getCurActivity());
 
         ioContext.restart();
         if (useTimeout)

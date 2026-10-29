@@ -70,7 +70,10 @@ acquireUploadLock(Descriptor lock, std::string_view storeUri, asio::io_context &
         }
         asio::steady_timer timer(ctx, std::chrono::seconds(1));
         boost::system::error_code ec;
-        timer.async_wait(yield[ec]);
+        {
+            SuspendedActivity suspended;
+            timer.async_wait(yield[ec]);
+        }
         if (ec)
             /* Cancellation arrives here when we are between network operations. */
             throw SystemError(ec, "waiting for the upload lock to '%s'", storeUri);

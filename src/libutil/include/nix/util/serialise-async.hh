@@ -5,6 +5,7 @@
 #include "nix/util/async.hh"
 #include "nix/util/serialise.hh"
 #include "nix/util/file-descriptor.hh"
+#include "nix/util/logging.hh"
 
 #ifdef _WIN32
 #  include <boost/asio/windows/stream_handle.hpp>
@@ -22,6 +23,22 @@
 #endif
 
 namespace nix {
+
+/**
+ * Hold across a suspension to restore this coroutine's current activity,
+ * which is per thread, on resumption. The resuming side (code that runs
+ * the loop or starts a coroutine, which asio may run at once) keeps its
+ * own with a `PushActivity`.
+ */
+struct SuspendedActivity
+{
+    const ActivityId saved = getCurActivity();
+
+    ~SuspendedActivity()
+    {
+        setCurActivity(saved);
+    }
+};
 
 using NativeAsyncStreamDescriptor =
 #ifndef _WIN32
@@ -71,6 +88,7 @@ public:
         boost::system::error_code ec;
         std::size_t res;
         try {
+            SuspendedActivity suspended;
             res = fd.async_read_some(asio::mutable_buffer(data, len), yield[ec]);
         } catch (boost::system::system_error & e) {
             /* With `throw_if_cancelled` set, an operation started after a
@@ -175,6 +193,7 @@ public:
             boost::system::error_code ec;
             std::size_t consumed;
             try {
+                SuspendedActivity suspended;
                 consumed = fd.async_write_some(asio::buffer(data.data(), data.size()), yield[ec]);
             } catch (boost::system::system_error & e) {
                 _good = false;
