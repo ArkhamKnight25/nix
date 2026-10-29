@@ -28,6 +28,10 @@
 
 source common.sh
 
+# Undefined behaviour found by a sanitizer build fails the test instead
+# of being printed and passed over.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
 TODO_NixOS
 # The in-process remote build is in no released daemon, whatever its
 # version number; a released daemon builds through its own hook.
@@ -151,7 +155,7 @@ kill -0 "$client" 2> /dev/null && fail "the client is still running a minute aft
 status=0
 wait "$client" || status=$?
 client=
-[[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
+[[ $status -ne 0 && $status -lt 128 ]] || fail "the client ended with status $status"
 
 # Only the daemon's connection process holds the machine's connection;
 # the builder stops once that process has given up the build.

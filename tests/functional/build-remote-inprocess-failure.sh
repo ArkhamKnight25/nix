@@ -21,6 +21,10 @@
 
 source common.sh
 
+# Undefined behaviour found by a sanitizer build fails the test instead
+# of being printed and passed over.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
 TODO_NixOS
 # The in-process remote build is in no released daemon, whatever its
 # version number; a released daemon builds through its own hook.
