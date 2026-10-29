@@ -83,6 +83,7 @@ suites = [
       'build-remote-inprocess-local-client.sh',
       'build-remote-inprocess-local-progress.sh',
       'build-remote-inprocess-log-limit.sh',
+      'build-remote-inprocess-log-limit-burst.sh',
       'build-remote-inprocess-machine-dies.sh',
       'build-remote-inprocess-many.sh',
       'build-remote-inprocess-multi-output.sh',
