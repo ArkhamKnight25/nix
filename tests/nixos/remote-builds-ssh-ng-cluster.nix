@@ -117,7 +117,11 @@ in
             b.wait_for_unit("sshd")
             b.wait_for_unit("multi-user.target")
             b.wait_for_unit("network-addresses-eth1.service")
-            client.succeed(f"ssh -o StrictHostKeyChecking=no {b.name} 'echo hello world'")
+            # `-n`: not reading the driver's console as stdin; bounded and
+            # retried, so a stuck first connection cannot hang the test.
+            client.wait_until_succeeds(
+                f"timeout 30 ssh -n -o StrictHostKeyChecking=no {b.name} 'echo hello world'", timeout=180
+            )
 
         # `marker-[x]yz` matches the builder's argv but not the `sh -c`
         # that runs this very pgrep, whose command line holds the pattern.
