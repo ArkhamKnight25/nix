@@ -107,6 +107,16 @@ SSHMaster::SSHMaster(
 
 void SSHMaster::addCommonSSHOpts(OsStrings & args)
 {
+    /* A prompt would block the worker's thread. Without multiplexing, every
+       connection prints its own `started` line and needs no blocking
+       `ssh -O check`. They go first because ssh keeps the first value of an
+       option, so they override a `ControlPath` in `NIX_SSHOPTS`. */
+    if (batchMode) {
+        args.push_back(OS_STR("-oBatchMode=yes"));
+        args.push_back(OS_STR("-oControlMaster=no"));
+        args.push_back(OS_STR("-oControlPath=none"));
+    }
+
     auto sshArgs = getNixSshOpts();
     args.insert(args.end(), sshArgs.begin(), sshArgs.end());
 
@@ -119,17 +129,6 @@ void SSHMaster::addCommonSSHOpts(OsStrings & args)
     }
     if (compress)
         args.push_back(OS_STR("-C"));
-    /* On every invocation for this host, the master included: a prompt
-       from any of them would stall the thread that must not block. And
-       no multiplexing: a connection of its own always prints the
-       `started` line below, so nothing needs to ask whether a master is
-       running (`isMasterRunning` runs `ssh -O check` synchronously, which
-       the worker's thread cannot afford per connection). */
-    if (batchMode) {
-        args.push_back(OS_STR("-oBatchMode=yes"));
-        args.push_back(OS_STR("-oControlMaster=no"));
-        args.push_back(OS_STR("-oControlPath=none"));
-    }
 
     if (authority.port)
         args.push_back(string_to_os_string(fmt("-p%d", *authority.port)));
@@ -238,6 +237,11 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
         conn->sshPid.setKillSignal(SIGTERM);
         conn->sshPid.setKillTimeout(std::chrono::seconds(10));
     }
+    /* In its own session the child leads a process group. Kill the group,
+       so that ssh's children (a `ProxyCommand`, say) do not keep the
+       connection open. */
+    if (batchMode)
+        conn->sshPid.setSeparatePG(true);
 #endif
 
     in.readSide.close();
