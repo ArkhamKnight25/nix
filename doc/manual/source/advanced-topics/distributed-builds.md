@@ -13,7 +13,7 @@ daemon, in a multi-user installation) picks the machine, copies the
 inputs over `ssh`, waits for the build and copies the outputs back, all
 while its other builds continue. `ssh` is run non-interactively: a
 machine it cannot authenticate to without a prompt counts as unreachable
-and is not tried again during that invocation. Other kinds of machine
+and is not tried again for that build. Other kinds of machine
 are built on through a separate `nix __build-remote` process, whose
 reply is awaited while the other builds proceed. A program set in
 [`build-hook`](@docroot@/command-ref/conf-file.md#conf-build-hook)

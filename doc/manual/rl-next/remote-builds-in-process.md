@@ -10,7 +10,8 @@ What changes for the user, for `ssh-ng` machines:
 
 - A remote build that fails is reported with the remote machine's own failure status, so `nix-build` exits with 100, 101 or 102 as it does for a local failure.
   The hook flattened every remote failure to a generic one (exit code 1).
-- A builder that cannot be reached is disabled for the rest of the invocation, as the hook disabled it for its own lifetime.
+- A builder that cannot be reached is passed over for the rest of that build; the next build tries it again, as a new hook process did.
+- These connections do not share an `ssh` master (`ControlMaster`): each build opens its own connection.
 - `ssh` runs with `-oBatchMode=yes` for these connections: it fails rather than prompts.
   A builder's key must not need a passphrase, or must be in an agent, as the manual already asks; the hook could never prompt either.
 

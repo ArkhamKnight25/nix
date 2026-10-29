@@ -6,10 +6,9 @@
 #    the machine, the machine is given up on, and with `-j0` (and a
 #    binary-cache client store, so nothing can run locally) the build
 #    fails with the usual explanation.
-# 2. A `builders` line that does not parse: the error is reported once
-#    per worker, the machine list is treated as empty, and the build
-#    runs locally where that is allowed (`-j1`, local store) or fails
-#    where it is not (`-j0`, binary-cache store).
+# 2. A `builders` line that does not parse: the build fails with the
+#    parse error, exit status 1, whether local builds are allowed (`-j2`)
+#    or not (`-j0`), as when the hook died on it.
 #
 # No sandbox: nothing is ever built on a machine here.
 
@@ -40,8 +39,9 @@ expr='
 # With `localhost` the program is run directly (ssh.cc, fakeSSH), so a
 # missing program is an exec failure in the child: the connection sees
 # end-of-file in the handshake, `buildOnRemoteMachine` reports it
-# (remote-machine-build.cc: "cannot build on '%s': %s"), disables the
-# machine, finds no other, and hands the build back for a local attempt.
+# (remote-machine-build.cc: "cannot build on '%s': %s"), passes the
+# machine over for this build, finds no other, and hands the build back;
+# with no machine left and no local builds, the build is rejected (100).
 status=0
 timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 1" \

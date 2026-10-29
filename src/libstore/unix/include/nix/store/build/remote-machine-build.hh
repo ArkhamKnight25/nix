@@ -109,7 +109,8 @@ bool machineRunsInProcess(const Machine & machine);
  *
  * The slot reserved by `acquired` stays reserved until this returns; it
  * is what other builds count as the machine's load. A machine that
- * cannot be reached is disabled in `machines`.
+ * cannot be reached is added to `req.unreachable` and passed over for
+ * the rest of this build.
  *
  * Throws on anything that is neither a build failure (reported in the
  * result) nor the lack of a machine. A cancelled coroutine throws with

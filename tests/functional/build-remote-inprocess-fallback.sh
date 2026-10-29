@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 
-# An unreachable machine is skipped, and stays skipped. Two `ssh-ng`
-# machines: the first cannot be started (its `remote-program` does not
-# exist), the second is the test's own store. Two derivations, one
-# depending on the other, so they are built one after the other.
+# An unreachable machine is skipped for the build that could not reach
+# it. Two `ssh-ng` machines: the first cannot be started (its
+# `remote-program` does not exist), the second is the test's own store.
+# Two derivations, one depending on the other, so they are built one
+# after the other.
 #
-# The first is offered the unreachable machine: the first selection
-# prefers it (machine-selection.cc, machineIsBetter: equal load, higher
-# speed factor). Its coroutine reports the failure, disables the machine
-# and moves on to the next one itself (remote-machine-build.cc,
-# buildOnRemoteMachine), so one coroutine builds it. The second
-# derivation is never offered the disabled machine: the error is printed
-# once, and two coroutines run in all. A coroutine that gave up after the
-# first machine would make the goal ask again and run a third; a machine
-# list that forgot the failure would print the error twice.
-#
-# The "building ... on" line is not checked: it names the machine first
-# selected, not the one that built.
+# Each is offered the unreachable machine: the selection prefers it
+# (machine-selection.cc, machineIsBetter: equal load, higher speed
+# factor). Its coroutine reports the failure, passes the machine over
+# for this build and moves on to the next one itself
+# (remote-machine-build.cc, buildOnRemoteMachine), so one coroutine
+# builds each: the error is printed twice, and two coroutines run in all.
+# A coroutine that gave up after the first machine would make the goal
+# ask again and run more; a machine disabled for the whole invocation
+# would print the error once.
 #
 # Setup as in build-remote-inprocess-concurrent.sh: binary-cache client
 # store, `-j0`, the test's own store as the machine, no sandbox.

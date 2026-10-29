@@ -6,8 +6,9 @@
 # 1. Two machines: an `ssh-ng` one that cannot be started (its
 #    `remote-program` does not exist; preferred, with the higher speed
 #    factor, machine-selection.cc, machineIsBetter) and an `ssh://` one.
-#    The in-process coroutine fails to connect, disables the `ssh-ng`
-#    machine, selects the next, finds it is not one it builds on, and
+#    The in-process coroutine fails to connect, passes the `ssh-ng`
+#    machine over for this build, selects the next, finds it is not one
+#    it builds on, and
 #    hands the build back (remote-machine-build.cc, buildOnRemoteMachine).
 #    The goal asks again at once and sends the `ssh://` machine to the
 #    hook process (derivation-building-goal.cc, tryRemoteBuilder). The
@@ -15,8 +16,8 @@
 #    serveBuildHook), so it also tries the `ssh-ng` machine first and
 #    reports it in the same words before it moves on: the message
 #    appears twice, once from each. A coroutine that tried the `ssh://`
-#    machine itself would open it on the blocking fallback
-#    (remote-machine-build.cc, openMachineStore) and say so.
+#    machine itself would fail with "is not an ssh-ng store"
+#    (remote-machine-build.cc, openMachineStore).
 # 2. `--max-build-log-size` on an `ssh://` machine, which only the hook
 #    builds on. The hook's parent counts what arrives on the hook's log
 #    descriptor and kills the hook past the limit (buildWithHook); the
