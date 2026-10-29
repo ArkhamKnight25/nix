@@ -63,32 +63,32 @@ grepQuietInverse "starting build hook '" "$log"
 badBuilders="ssh-ng://localhost - - notanumber 1"
 parseError="bad machine specification: failed to convert column #3 in a row"
 
-# 2a. Nowhere to build: the parse error is reported, then the usual failure.
+# 2a. Nowhere to build: the build fails with the parse error, as it did
+# when the hook died on it, and the client does not crash.
 status=0
 timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "$badBuilders" 2> "$log" || status=$?
-[[ $status -ne 0 ]] || fail "the build succeeded with an unparsable machine list and no local builds"
-[[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
+[[ $status -ne 0 && $status -lt 128 ]] || fail "expected an orderly failure for an unparsable machine list, got status $status"
 grepQuiet "$parseError" "$log"
-grepQuiet "Unable to build with a primary store that isn't a local store" "$log"
 grepQuietInverse "Nix crashed" "$log"
 
-# 2b. Local builds allowed: both derivations build locally, and the
-# parse error is reported once, not once per derivation. The first goal
-# to ask parses the list (worker.cc, Worker::remoteMachines), finds it
-# empty and clears `worker.tryBuildHook`; the second is then declined by
-# that guard at the top of selectRemoteMachine
-# (derivation-building-goal.cc) without looking at the list again.
+# 2b. Local builds allowed: still an error. A machine list that does not
+# parse is a misconfiguration, not an empty list; the builds are not
+# quietly done locally (worker.cc, Worker::remoteMachines).
 # shellcheck disable=SC2016
-outPaths=$(timeout 200 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E '
+expr2='
   with import '"${config_nix}"';
   [ (mkDerivation { name = "inprocess-error-local-a"; buildCommand = "echo a > $out"; })
     (mkDerivation { name = "inprocess-error-local-b"; buildCommand = "echo b > $out"; }) ]
-' 2> "$log")
-[[ $(echo "$outPaths" | wc -l) -eq 2 ]]
-for outPath in $outPaths; do
-    [[ -s $outPath ]]
+'
+status=0
+timeout 200 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E "$expr2" 2> "$log" || status=$?
+[[ $status -ne 0 && $status -lt 128 ]] || fail "expected an orderly failure for an unparsable machine list, got status $status"
+grepQuiet "$parseError" "$log"
+for drvPath in $(nix-instantiate -E "$expr2"); do
+    for outPath in $(nix-store -q --outputs "$drvPath"); do
+        [[ ! -e $outPath ]] || fail "$outPath was built with an unparsable machine list"
+    done
 done
-[[ $(grep -c "$parseError" "$log") -eq 1 ]]
 grepQuietInverse "remote build done" "$log"
 grepQuietInverse "starting build hook '" "$log"
