@@ -120,9 +120,16 @@ void SSHMaster::addCommonSSHOpts(OsStrings & args)
     if (compress)
         args.push_back(OS_STR("-C"));
     /* On every invocation for this host, the master included: a prompt
-       from any of them would stall the thread that must not block. */
-    if (batchMode)
+       from any of them would stall the thread that must not block. And
+       no multiplexing: a connection of its own always prints the
+       `started` line below, so nothing needs to ask whether a master is
+       running (`isMasterRunning` runs `ssh -O check` synchronously, which
+       the worker's thread cannot afford per connection). */
+    if (batchMode) {
         args.push_back(OS_STR("-oBatchMode=yes"));
+        args.push_back(OS_STR("-oControlMaster=no"));
+        args.push_back(OS_STR("-oControlPath=none"));
+    }
 
     if (authority.port)
         args.push_back(string_to_os_string(fmt("-p%d", *authority.port)));
@@ -218,6 +225,11 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
             .args = std::move(args),
             .environment = createSSHEnv(),
             .dieWithParent = false,
+            /* Started for the worker (batch mode): no terminal, so the
+               terminal's Ctrl-C and Ctrl-Z reach the worker, which stops
+               the build in order, and not ssh. Otherwise ssh keeps the
+               terminal for its prompts. */
+            .setSid = batchMode,
         },
         fdr);
 
@@ -237,7 +249,7 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
 
     // Wait for the SSH connection to be established,
     // So that we don't overwrite the password prompt with our progress bar.
-    if (!fakeSSH && !useMaster && !isMasterRunning()) {
+    if (!fakeSSH && !useMaster && (batchMode || !isMasterRunning())) {
         if (!awaitStarted) {
             /* The caller reads it, without blocking its thread, and
                holds the suspension meanwhile; see
