@@ -208,8 +208,10 @@ in
             print("=== DIAG journal")
             print(client.execute("journalctl -b --no-pager -o short-precise | tail -n 60")[1])
 
+        # The driver runs commands under `set -euo pipefail`: a failing
+        # nix-build would end the subshell before its status is written.
         client.execute(
-            f"(nix-build {expr} --no-out-link -vvvv --argstr name crash --argstr seconds 300 > crash.log 2>&1; echo $? > crash.exit) > /dev/null 2>&1 &"
+            f"(rc=0; nix-build {expr} --no-out-link -vvvv --argstr name crash --argstr seconds 300 > crash.log 2>&1 || rc=$?; echo $rc > crash.exit) > /dev/null 2>&1 &"
         )
         wait_until(lambda: who_runs("marker-crash"), 60, "the crash build to start on a builder")
         victim = who_runs("marker-crash")[0]
@@ -230,9 +232,17 @@ in
         print(client.succeed("sed -e 's/^/crash-log:/' crash.log"))
 
         survivors = [b for b in builders if b is not victim]
-        out = client.succeed(
-            f"nix-build {expr} --no-out-link --argstr name after --argstr seconds 1 2> after.log"
-        ).strip()
+        t_after = time.monotonic()
+        try:
+            out = client.succeed(
+                f"nix-build {expr} --no-out-link -vvv --argstr name after --argstr seconds 1 2> after.log"
+            ).strip()
+        except Exception:
+            print("=== DIAG after.log")
+            print(client.execute("tail -n 100 after.log")[1])
+            raise
+        print("DIAG after build took", time.monotonic() - t_after, "s")
+        print(client.succeed("grep -E \"building '|cannot build|Cannot build|connecting to\" after.log || true"))
         host = built_on(out, survivors)
         print("build after the crash ran on", host)
       '';
