@@ -47,6 +47,19 @@ struct RemoteMachineBuildRequest
      * that it outlives the coroutine however that ends.
      */
     std::shared_ptr<Logger> messageLogger;
+
+    /**
+     * Told the store URI of the machine once connected to it, which
+     * after a failover is not the one first selected.
+     */
+    std::function<void(const std::string &)> onMachine;
+
+    /**
+     * The machines this build has found unreachable, the goal's set:
+     * read to pass them over, added to when one more cannot be reached.
+     * Optional; a set of this attempt's own otherwise.
+     */
+    std::shared_ptr<std::set<const Machine *>> unreachable;
 };
 
 /**

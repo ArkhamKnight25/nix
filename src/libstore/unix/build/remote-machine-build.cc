@@ -110,9 +110,17 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
     auto currentLoad = getCurrentLoadDir(store);
 
     /* Connect, moving on to the next machine when one cannot be
-       reached, as `serveBuildHook` does. */
+       reached, as `serveBuildHook` does. A machine that could not be
+       reached is passed over for this build only: the hook disabled it
+       for the rest of its own process, which built one derivation, and a
+       worker lives for the whole invocation. One refused connection (an
+       sshd at its `MaxStartups`, say) must not take a machine out of
+       service for everything that follows. */
     std::shared_ptr<Store> sshStore;
     std::string storeUri;
+    auto unreachableOwned = req.unreachable ? req.unreachable : std::make_shared<std::set<const Machine *>>();
+    auto & unreachable = *unreachableOwned;
+    bool failedOver = false;
     while (true) {
         storeUri = acquired.machine->storeUri.render();
         try {
@@ -130,11 +138,12 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
             /* The hook also showed ssh's own stderr here, which it had
                on a pipe; ours goes wherever the worker's stderr goes. */
             printError("cannot build on '%s': %s", storeUri, e.what());
-            acquired.machine->enabled = false;
+            unreachable.insert(acquired.machine);
+            failedOver = true;
         }
 
         acquired.slotLock.close();
-        auto selection = acquireMachineSlot(currentLoad, machines, req.neededSystem, req.requiredFeatures);
+        auto selection = acquireMachineSlot(currentLoad, machines, req.neededSystem, req.requiredFeatures, unreachable);
         if (auto * noMachine = std::get_if<NoMachine>(&selection))
             return RemoteMachineUnavailable{*noMachine};
         acquired = std::get<AcquiredMachine>(std::move(selection));
@@ -145,6 +154,13 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         if (!machineRunsInProcess(*acquired.machine))
             return RemoteMachineUnavailable{NoMachine::AllBusy};
     }
+
+    /* The goal announced the machine first selected; say where the
+       build really goes when that changed. */
+    if (failedOver)
+        printInfo("building '%s' on '%s' instead", store.printStorePath(req.drvPath), storeUri);
+    if (req.onMachine)
+        req.onMachine(storeUri);
 
     AutoCloseFD uploadLock = openUploadLock(currentLoad, storeUri);
     acquireUploadLock(uploadLock.get(), storeUri, ctx, yield);

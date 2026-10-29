@@ -106,6 +106,16 @@ private:
      */
     std::unique_ptr<HookInstance> hookAccepted;
     std::string hookMachineName;
+
+    /**
+     * The machines this build could not reach. Passed over by every
+     * selection for this build, so that asking again after a failed
+     * attempt does not pick them once more; other builds still try them
+     * (the hook disabled a machine for the life of its process, which
+     * built one derivation). Shared with the coroutine, which outlives a
+     * destroyed goal.
+     */
+    std::shared_ptr<std::set<const Machine *>> unreachableMachines = std::make_shared<std::set<const Machine *>>();
 #endif
 
     /**

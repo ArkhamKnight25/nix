@@ -60,7 +60,8 @@ std::variant<AcquiredMachine, NoMachine> acquireMachineSlot(
     const std::filesystem::path & currentLoadDir,
     Machines & machines,
     const std::string & neededSystem,
-    const StringSet & requiredFeatures)
+    const StringSet & requiredFeatures,
+    const std::set<const Machine *> & skip)
 {
     AutoCloseFD lock = openLockFile(currentLoadDir / "main-lock", true);
     lockFile(lock.get(), ltWrite, true);
@@ -73,6 +74,8 @@ std::variant<AcquiredMachine, NoMachine> acquireMachineSlot(
 
     for (auto & m : machines) {
         debug("considering building on remote machine '%s'", m.storeUri.render());
+        if (skip.contains(&m))
+            continue;
 
         if (!machineIsCandidate(m, neededSystem, requiredFeatures))
             continue;

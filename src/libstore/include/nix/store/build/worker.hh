@@ -339,10 +339,9 @@ public:
     /**
      * The configured remote builders, parsed on first use and shared by
      * every in-process remote build of this worker. A machine that could
-     * not be reached is disabled here for the rest of the worker's life,
-     * as a hook process disabled it for the rest of its own. A
-     * `builders` setting that does not parse is reported once and
-     * yields no machines.
+     * not be reached is passed over for that build only
+     * (`buildOnRemoteMachine`). A `builders` setting that does not parse
+     * throws, for every build that asks, as the hook's death did.
      */
     Machines & remoteMachines();
 
