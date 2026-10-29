@@ -56,10 +56,11 @@ wait "$client" || status=$?
 # A non-zero exit, but not death by a signal (134 is SIGABRT, 139 SIGSEGV).
 [[ $status -ne 0 && $status -lt 128 ]] || fail "the client ended with status $status"
 grepQuietInverse "Nix crashed" "$log"
-# The cancellation finished the remote-build coroutine before the worker
-# was destroyed (worker.cc, ~Worker). The builder check below cannot show
-# this on its own: the machine's daemon also stops the build when its
-# client goes away (MonitorFdHup), which the client's exit guarantees.
+# The exit was the interrupt's, not some other failure's.
+grepQuiet "interrupted by the user" "$log"
+# The coroutine finished before the worker was destroyed. The builder
+# check below cannot show this, as the machine's daemon also stops the
+# build once the client exits.
 grepQuietInverse "still in flight when the worker went away" "$log"
 
 # The machine's build is gone, with the ssh child that owned it.

@@ -44,7 +44,8 @@ status=0
 timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "ssh-ng://localhost?remote-program=$TEST_ROOT/no-such-program - - 1 1" \
   2> "$log" || status=$?
-[[ $status -ne 0 ]] || fail "the build succeeded with no machine and no local builds"
+# Status 100 is a failed build, not an error (1), timeout (124) or crash.
+[[ $status -eq 100 ]] || fail "expected exit status 100 with no machine and no local builds, got $status"
 [[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
 grepQuietInverse "Nix crashed" "$log"
 
@@ -67,7 +68,7 @@ parseError="bad machine specification: failed to convert column #3 in a row"
 status=0
 timeout 200 nix-build -E "$expr" --store "file://$cache" -j0 --no-out-link -vvv \
   --builders "$badBuilders" 2> "$log" || status=$?
-[[ $status -ne 0 && $status -lt 128 ]] || fail "expected an orderly failure for an unparsable machine list, got status $status"
+[[ $status -eq 1 ]] || fail "expected exit status 1 for an unparsable machine list, got $status"
 grepQuiet "$parseError" "$log"
 grepQuietInverse "Nix crashed" "$log"
 
@@ -81,7 +82,7 @@ expr2='
 '
 status=0
 timeout 200 nix-build --no-out-link -vvv -j2 --builders "$badBuilders" -E "$expr2" 2> "$log" || status=$?
-[[ $status -ne 0 && $status -lt 128 ]] || fail "expected an orderly failure for an unparsable machine list, got status $status"
+[[ $status -eq 1 ]] || fail "expected exit status 1 for an unparsable machine list, got $status"
 grepQuiet "$parseError" "$log"
 for drvPath in $(nix-instantiate -E "$expr2"); do
     for outPath in $(nix-store -q --outputs "$drvPath"); do

@@ -53,9 +53,8 @@ outPath=$(timeout 200 nix-build --store "file://$cache" -j0 --no-out-link -vvv \
 nix path-info --store "file://$cache" "$outPath"
 nix path-info --store "file://$cache" --recursive "$outPath" | grepQuiet inprocess-fallback-first
 
-# The unreachable machine was tried once, named with what made it so
-# (remote-machine-build.cc: "cannot build on '%s': %s").
-[[ $(grep -c "cannot build on 'ssh-ng://localhost.*no-such-program" "$log") -eq 1 ]]
+# The error comes once per build, not once per invocation.
+[[ $(grep -c "cannot build on 'ssh-ng://localhost.*no-such-program" "$log") -eq 2 ]]
 
 # One coroutine per derivation, the fallback included.
 [[ $(grep -c "remote build done" "$log") -eq 2 ]]
