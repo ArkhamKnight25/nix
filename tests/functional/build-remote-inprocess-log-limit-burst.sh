@@ -36,7 +36,8 @@ log="$TEST_ROOT/log"
 rm -rf "$cache" "$sync"
 mkdir -p "$sync"
 client=
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; [[ -n $client ]] && { kill -CONT "$client"; kill -KILL "$client"; } 2> /dev/null; [[ -s $sync/noisy-pid ]] && kill -KILL "$(< "$sync/noisy-pid")" 2> /dev/null; killDaemon' EXIT
+# Cleanup must not fail: the processes it kills have usually exited.
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; if [[ -n $client ]]; then kill -CONT "$client" 2> /dev/null || true; kill -KILL "$client" 2> /dev/null || true; fi; if [[ -s $sync/noisy-pid ]]; then kill -KILL "$(< "$sync/noisy-pid")" 2> /dev/null || true; fi; killDaemon' EXIT
 
 # The builder waits for `go`, bounded at 1200 polls of 0.1 s, then
 # prints without end. (Quoted heredoc: `$$`, `$i` and `$out` are for the

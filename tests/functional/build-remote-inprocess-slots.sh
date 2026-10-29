@@ -47,7 +47,7 @@ log="$TEST_ROOT/log"
 rm -rf "$cache" "$TEST_ROOT/sync-"*
 mkdir -p "$TEST_ROOT/sync-one" "$TEST_ROOT/sync-two/inflight" "$TEST_ROOT/sync-two/done" "$TEST_ROOT/sync-three"
 client=
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$TEST_ROOT/sync-three/release"; [[ -n $client ]] && kill -KILL -- -"$client" 2> /dev/null; killDaemon' EXIT
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$TEST_ROOT/sync-three/release"; if [[ -n $client ]]; then kill -KILL -- -"$client" 2> /dev/null || true; fi; killDaemon' EXIT
 
 # --- 1. one slot ------------------------------------------------------
 
