@@ -560,9 +560,11 @@ void Worker::waitForInput()
             if (!(w.flags & O_NONBLOCK) && fcntl(w.fd, F_SETFL, w.flags) == -1)
                 throw SysError("restoring the flags of descriptor %d", w.fd);
         }
-        /* The cancelled waits post their (empty) handlers; drain them so
-           they do not count as work on the next wait. */
-        ioContext.poll();
+        /* Drain the cancelled waits' empty handlers so they do not count as
+           work on the next wait. Bounded like the loop above; a leftover
+           one runs on the next wait and does nothing. */
+        for (std::size_t n = 0; n < watched.size() + 64 && ioContext.poll_one(); ++n)
+            ;
     }
 
     state.poll(std::optional{0u});
@@ -631,14 +633,10 @@ void Worker::waitForInput()
 
 Machines & Worker::remoteMachines()
 {
-    if (!remoteMachines_) {
-        try {
-            remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
-        } catch (Error & e) {
-            logError(e.info());
-            remoteMachines_ = Machines{};
-        }
-    }
+    /* A list that does not parse fails each build that asks for it,
+       rather than counting as empty. */
+    if (!remoteMachines_)
+        remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
     return *remoteMachines_;
 }
 
