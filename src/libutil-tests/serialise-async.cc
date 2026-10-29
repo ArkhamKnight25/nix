@@ -135,8 +135,7 @@ TEST_F(AsyncFdTest, partialWritesContinueWhereTheyStopped)
     std::string got;
     ASSERT_NO_THROW(got = read.get());
     auto [mismatch, _] = std::mismatch(contents.begin(), contents.end(), got.begin());
-    EXPECT_TRUE(mismatch == contents.end())
-        << "first wrong byte at offset " << (mismatch - contents.begin());
+    EXPECT_TRUE(mismatch == contents.end()) << "first wrong byte at offset " << (mismatch - contents.begin());
 }
 
 /* The current activity is per thread. Two coroutines that each push one
