@@ -30,6 +30,7 @@
 #include <chrono>
 #include <algorithm>
 #include <array>
+#include <set>
 
 #include <sys/types.h>
 #include <fcntl.h>
@@ -1508,11 +1509,26 @@ struct RemoteBuildLogger : Logger
     ActivityId buildActivity = 0;
     std::string currentRawLine;
 
+    /**
+     * The machine's activities still open. Their ids are the machine's;
+     * a parent we have not seen is one of the machine's top-level
+     * activities, which is shown under `buildActivity`, as the hook path
+     * showed them. Whatever is still open when this logger goes is
+     * stopped, so an abrupt teardown leaves no entry hanging.
+     */
+    std::set<ActivityId> openRemote;
+
     RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath, uint64_t maxLogSize)
         : next(next)
         , logFile(std::make_unique<LogFile>(store, drvPath, settings.getLogFileSettings()))
         , maxLogSize(maxLogSize)
     {
+    }
+
+    ~RemoteBuildLogger() override
+    {
+        for (auto act : openRemote)
+            next.stopActivity(act);
     }
 
     /**
@@ -1568,11 +1584,18 @@ struct RemoteBuildLogger : Logger
         std::span<const Field> fields,
         ActivityId parent) noexcept override
     {
+        try {
+            if (!openRemote.contains(parent))
+                parent = buildActivity;
+            openRemote.insert(act);
+        } catch (...) {
+        }
         next.startActivity(act, lvl, type, s, fields, parent);
     }
 
     void stopActivity(ActivityId act) noexcept override
     {
+        openRemote.erase(act);
         next.stopActivity(act);
     }
 
@@ -1838,7 +1861,9 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
     if (auto * failure = built.result.tryGetFailure()) {
         outputLocks.unlock();
         /* The machine's own verdict, status included, where the hook
-           flattened it to `MiscFailure`. */
+           flattened it to `MiscFailure`; with the machine named, as the
+           hook named it. */
+        failure->addTrace({}, "while building '%s' on '%s'", worker.store.printStorePath(drvPath), machineName);
         co_return std::move(*failure);
     }
 

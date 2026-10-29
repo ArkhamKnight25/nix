@@ -596,8 +596,13 @@ void Worker::waitForInput()
                 throw SysError("restoring the flags of descriptor %d", w.fd);
         }
         /* The cancelled waits post their (empty) handlers; drain them so
-           they do not count as work on the next wait. */
-        ioContext.poll();
+           they do not count as work on the next wait. Bounded like the
+           loop above: `poll()` would also run every coroutine resumption
+           that becomes ready meanwhile, and a copy over a fast pipe could
+           run to its end in here. A handler left over is run on the next
+           wait and does nothing. */
+        for (std::size_t n = 0; n < watched.size() + 64 && ioContext.poll_one(); ++n)
+            ;
     }
 
     state.poll(std::optional{0u});
@@ -666,14 +671,10 @@ void Worker::waitForInput()
 
 Machines & Worker::remoteMachines()
 {
-    if (!remoteMachines_) {
-        try {
-            remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
-        } catch (Error & e) {
-            logError(e.info());
-            remoteMachines_ = Machines{};
-        }
-    }
+    /* A line that does not parse is an error for the build that asks, as
+       it was when the hook died on it; not a list to treat as empty. */
+    if (!remoteMachines_)
+        remoteMachines_ = Machine::parseConfig({nix::settings.thisSystem}, settings.builders);
     return *remoteMachines_;
 }
 
