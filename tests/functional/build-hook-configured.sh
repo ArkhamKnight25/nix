@@ -5,6 +5,9 @@
 
 source common.sh
 
+# Fail on undefined behaviour in sanitizer builds.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
 TODO_NixOS
 
 hook="$TEST_ROOT/hook.sh"

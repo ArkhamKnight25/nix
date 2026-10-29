@@ -7,6 +7,9 @@
 
 source common.sh
 
+# Fail on undefined behaviour in sanitizer builds.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
 TODO_NixOS
 # No released daemon builds remotely in-process.
 requireDaemonIsThisVersion
@@ -50,8 +53,8 @@ if kill -0 "$client" 2> /dev/null; then
 fi
 status=0
 wait "$client" || status=$?
-# Not an abort (134) or a segfault (139): an orderly exit after an interrupt.
-[[ $status -ne $((128 + 6)) && $status -ne $((128 + 11)) ]] || fail "the client died with status $status"
+# A non-zero exit, but not death by a signal (134 is SIGABRT, 139 SIGSEGV).
+[[ $status -ne 0 && $status -lt 128 ]] || fail "the client ended with status $status"
 grepQuietInverse "Nix crashed" "$log"
 # The cancellation finished the remote-build coroutine before the worker
 # was destroyed (worker.cc, ~Worker). The builder check below cannot show

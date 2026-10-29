@@ -135,6 +135,13 @@ in
 
         # Check that we get phase reporting in the log file
         client.succeed("grep -q '@nix {\"action\":\"setPhase\",\"phase\":\"buildPhase\"}' log-output")
+
+        # The build runs in-process on the ssh-ng machine, not through a hook.
+        out2 = client.succeed("nix-build ${expr nodes.client 2} -vvv 2> debug-output")
+        builder.succeed(f"test -e {out2.strip()}")
+        client.succeed("grep -q \"on 'ssh-ng://root@builder'\" debug-output")
+        client.succeed("grep -q 'remote build done' debug-output")
+        client.fail("grep -q 'starting build hook' debug-output")
       '';
   };
 }

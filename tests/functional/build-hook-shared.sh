@@ -5,8 +5,10 @@
 
 source common.sh
 
-# Older daemons start a hook per ready goal, or log hook starts
-# differently.
+# Fail on undefined behaviour in sanitizer builds.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
+# Older daemons start a hook per goal or log hook starts differently.
 requireDaemonIsThisVersion
 TODO_NixOS
 

@@ -6,6 +6,9 @@
 
 source common.sh
 
+# Fail on undefined behaviour in sanitizer builds.
+export UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1:print_stacktrace=1
+
 TODO_NixOS
 requireDaemonIsThisVersion
 
@@ -63,8 +66,8 @@ if kill -0 "$client" 2> /dev/null; then stop; fail "the client is still running"
 status=0
 wait "$client" || status=$?
 
-# 134 is SIGABRT.
-(( status != 134 )) || fail "the client crashed: $(< "$TEST_ROOT/log")"
+# A non-zero exit, but not death by a signal (134 is SIGABRT, 139 SIGSEGV).
+(( status != 0 && status < 128 )) || fail "the client ended with status $status: $(< "$TEST_ROOT/log")"
 grepQuietInverse "Nix crashed" "$TEST_ROOT/log"
 
 for _ in $(seq 20); do
