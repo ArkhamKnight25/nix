@@ -196,7 +196,9 @@ in
         victim.crash()
         wait_until(lambda: client.execute("test -e crash.exit")[0] == 0, 120, "the client to notice the dead machine")
         status = client.succeed("cat crash.exit").strip()
-        assert status != "0", "the build on the dead machine was reported as successful"
+        # An ordinary failure (1): not success, and not a crash of the
+        # client (134 is an abort, 139 a segfault).
+        assert status == "1", f"the build on the dead machine ended with status {status}"
         print(client.succeed("sed -e 's/^/crash-log:/' crash.log"))
 
         survivors = [b for b in builders if b is not victim]

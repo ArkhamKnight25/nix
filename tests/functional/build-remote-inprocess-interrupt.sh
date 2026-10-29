@@ -70,6 +70,8 @@ wait "$client" || status=$?
 # (an abort is 134, a segfault 139, an unhandled SIGINT 130).
 [[ $status -ne 0 && $status -lt 128 ]] || fail "the client ended with status $status"
 grepQuietInverse "Nix crashed" "$log"
+# ...and the exit was the interrupt's, not some other failure's.
+grepQuiet "interrupted by the user" "$log"
 # The cancellation finished the remote-build coroutine before the worker
 # was destroyed (worker.cc, ~Worker). The builder check below cannot show
 # this on its own: the machine's daemon also stops the build when its
