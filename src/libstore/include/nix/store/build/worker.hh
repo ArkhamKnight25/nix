@@ -316,11 +316,8 @@ public:
 
     /**
      * The configured remote builders, parsed on first use and shared by
-     * every in-process remote build of this worker. A machine that could
-     * not be reached is disabled here for the rest of the worker's life,
-     * as a hook process disabled it for the rest of its own. A
-     * `builders` setting that does not parse is reported once and
-     * yields no machines.
+     * the in-process remote builds. A build skips a machine it cannot
+     * reach without removing it. Throws if `builders` does not parse.
      */
     Machines & remoteMachines();
 

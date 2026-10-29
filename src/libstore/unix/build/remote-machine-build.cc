@@ -102,10 +102,15 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
 
     auto currentLoad = getCurrentLoadDir(store);
 
-    /* Connect, moving on to the next machine when one cannot be
-       reached, as `serveBuildHook` does. */
+    /* Connect, moving on to the next machine when one cannot be reached.
+       Skip it for this build only: a worker lives for the whole
+       invocation, and one refused connection (an sshd at `MaxStartups`)
+       must not take the machine out of service for the rest. */
     std::shared_ptr<Store> sshStore;
     std::string storeUri;
+    auto unreachableOwned = req.unreachable ? req.unreachable : std::make_shared<std::set<const Machine *>>();
+    auto & unreachable = *unreachableOwned;
+    bool failedOver = false;
     while (true) {
         storeUri = acquired.machine->storeUri.render();
         try {
@@ -121,11 +126,12 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
                 throw;
             /* ssh's own stderr goes straight to the worker's. */
             printError("cannot build on '%s': %s", storeUri, e.what());
-            acquired.machine->enabled = false;
+            unreachable.insert(acquired.machine);
+            failedOver = true;
         }
 
         acquired.slotLock.close();
-        auto selection = acquireMachineSlot(currentLoad, machines, req.neededSystem, req.requiredFeatures);
+        auto selection = acquireMachineSlot(currentLoad, machines, req.neededSystem, req.requiredFeatures, unreachable);
         if (auto * noMachine = std::get_if<NoMachine>(&selection))
             return RemoteMachineUnavailable{*noMachine};
         acquired = std::get<AcquiredMachine>(std::move(selection));
@@ -134,6 +140,12 @@ RemoteMachineBuildOutcome buildOnRemoteMachine(
         if (!machineRunsInProcess(*acquired.machine))
             return RemoteMachineUnavailable{NoMachine::AllBusy};
     }
+
+    /* The goal announced the machine first selected. */
+    if (failedOver)
+        printInfo("building '%s' on '%s' instead", store.printStorePath(req.drvPath), storeUri);
+    if (req.onMachine)
+        req.onMachine(storeUri);
 
     AutoCloseFD uploadLock = openUploadLock(currentLoad, storeUri);
     acquireUploadLock(uploadLock.get(), storeUri, ctx, yield);

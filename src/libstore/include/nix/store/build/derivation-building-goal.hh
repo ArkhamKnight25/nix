@@ -101,6 +101,13 @@ private:
     /** The accepting hook and its machine, for `buildWithHook`. */
     std::unique_ptr<HookInstance> hookAccepted;
     std::string hookMachineName;
+
+    /**
+     * Machines this build could not reach, skipped by its later
+     * selections; other builds still try them. Shared with the
+     * coroutine, which can outlive the goal.
+     */
+    std::shared_ptr<std::set<const Machine *>> unreachableMachines = std::make_shared<std::set<const Machine *>>();
 #endif
 
     /**

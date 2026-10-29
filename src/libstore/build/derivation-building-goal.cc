@@ -30,6 +30,7 @@
 #include <chrono>
 #include <algorithm>
 #include <array>
+#include <map>
 #include <set>
 
 #include <sys/types.h>
@@ -512,11 +513,9 @@ Goal::Co<DerivationBuildingGoal::Result> DerivationBuildingGoal::tryToBuild()
             co_return co_await buildWithHook(inputPaths, initialOutputs, std::move(outputLocks));
         };
 
-        /* A machine that accepted may still hand the build back: it could
-           not be reached (and is disabled now), or the next machine in
-           line is one the hook process speaks to. Ask again at once then,
-           as the hook moved on to the next machine within one request;
-           a `postpone` is reported as such and waits below. */
+        /* An accepted build may come back unbuilt. Ask again at once, as
+           the hook moved on within one request; the unreachable machine
+           is now skipped for this build. */
         for (bool askAgain = true; askAgain;) {
             askAgain = false;
             PathLocks outputLocks;
@@ -1429,7 +1428,7 @@ DerivationBuildingGoal::selectRemoteMachine(const DerivationOptions<StorePath> &
     auto currentLoad = getCurrentLoadDir(worker.store);
     createDirs(currentLoad);
 
-    auto selection = acquireMachineSlot(currentLoad, machines, neededSystem, requiredFeatures);
+    auto selection = acquireMachineSlot(currentLoad, machines, neededSystem, requiredFeatures, *unreachableMachines);
 
     if (auto * noMachine = std::get_if<NoMachine>(&selection)) {
         if (*noMachine == NoMachine::AllBusy && !canBuildLocally)
@@ -1470,13 +1469,12 @@ struct RemoteBuildLogger : Logger
     std::string currentRawLine;
 
     /**
-     * The machine's activities still open. Their ids are the machine's;
-     * a parent we have not seen is one of the machine's top-level
-     * activities, which is shown under `buildActivity`, as the hook path
-     * showed them. Whatever is still open when this logger goes is
-     * stopped, so an abrupt teardown leaves no entry hanging.
+     * The machine's open activities by remote id, each re-created with a
+     * local id: two machines whose daemons share a pid would send the same
+     * ids, which the progress bar asserts against. An unknown parent maps
+     * to `buildActivity`.
      */
-    std::set<ActivityId> openRemote;
+    std::map<ActivityId, Activity> remoteActivities;
 
     RemoteBuildLogger(Logger & next, Store & store, const StorePath & drvPath, uint64_t maxLogSize)
         : next(next)
@@ -1485,10 +1483,12 @@ struct RemoteBuildLogger : Logger
     {
     }
 
-    ~RemoteBuildLogger() override
+    ~RemoteBuildLogger() override = default;
+
+    ActivityId localActivity(ActivityId remote) const
     {
-        for (auto act : openRemote)
-            next.stopActivity(act);
+        auto i = remoteActivities.find(remote);
+        return i == remoteActivities.end() ? buildActivity : i->second.id;
     }
 
     /**
@@ -1544,18 +1544,16 @@ struct RemoteBuildLogger : Logger
         ActivityId parent) noexcept override
     {
         try {
-            if (!openRemote.contains(parent))
-                parent = buildActivity;
-            openRemote.insert(act);
+            /* The new `Activity` starts itself on `next` with a local id. */
+            remoteActivities.try_emplace(act, next, lvl, type, s, fields, localActivity(parent));
         } catch (...) {
+            ignoreExceptionInDestructor();
         }
-        next.startActivity(act, lvl, type, s, fields, parent);
     }
 
     void stopActivity(ActivityId act) noexcept override
     {
-        openRemote.erase(act);
-        next.stopActivity(act);
+        remoteActivities.erase(act);
     }
 
     void result(ActivityId act, ResultType type, std::span<const Field> fields) noexcept override
@@ -1564,7 +1562,7 @@ struct RemoteBuildLogger : Logger
         if (logLimitExceeded && (type == resBuildLogLine || type == resSetPhase))
             return;
 
-        next.result(act, type, fields);
+        next.result(localActivity(act), type, fields);
 
         if (fields.empty())
             return;
@@ -1602,7 +1600,7 @@ struct RemoteBuildLogger : Logger
 
     void result(ActivityId act, ResultType type, const nlohmann::json & json) noexcept override
     {
-        next.result(act, type, json);
+        next.result(localActivity(act), type, json);
     }
 
     void writeToStdout(std::string_view s) override
@@ -1651,6 +1649,7 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         .inputPaths = inputPaths,
         .wantedOutputs = std::move(wantedOutputs),
         .messageLogger = remoteLogger,
+        .unreachable = unreachableMachines,
     });
 
     buildResult.startTime = time(nullptr); // inexact
@@ -1683,9 +1682,12 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
         std::optional<RemoteMachineBuildOutcome> outcome;
         std::exception_ptr error;
         asio::cancellation_signal cancel;
+        /** The machine the coroutine connected to, after any failover. */
+        std::string machine;
     };
 
     auto state = std::make_shared<State>();
+    request->onMachine = [state](const std::string & storeUri) { state->machine = storeUri; };
 
     struct CancelOnExit
     {
@@ -1747,8 +1749,11 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
 
     trace("remote build done");
 
-    /* Close the log file; the coroutine's function object or completion
-       handler may still hold the logger for a moment. */
+    /* The coroutine may have failed over to another machine. */
+    if (!state->machine.empty())
+        machineName = state->machine;
+
+    /* The coroutine's handlers may still hold the logger for a moment. */
     remoteLogger->closeLogFile();
     bool logLimitHit = remoteLogger->logLimitExceeded;
     remoteLogger.reset();

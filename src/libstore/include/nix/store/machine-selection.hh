@@ -66,14 +66,15 @@ enum class NoMachine {
 
 /**
  * Reserve a build slot on the least loaded machine that can run this
- * build, under a lock on `currentLoadDir/main-lock`. The result points
- * into `machines`.
+ * build, under a lock on `currentLoadDir/main-lock`, passing over the
+ * machines in `skip`.
  */
 std::variant<AcquiredMachine, NoMachine> acquireMachineSlot(
     const std::filesystem::path & currentLoadDir,
     Machines & machines,
     const std::string & neededSystem,
-    const StringSet & requiredFeatures);
+    const StringSet & requiredFeatures,
+    const std::set<const Machine *> & skip = {});
 
 /**
  * The explanation printed when no configured machine can run
