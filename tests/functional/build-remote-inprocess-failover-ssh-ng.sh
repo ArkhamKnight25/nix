@@ -63,3 +63,21 @@ grepQuietInverse "starting build hook '" "$log"
 grepQuietInverse "is not an ssh-ng store" "$log"
 grepQuietInverse "still in flight when the worker went away" "$log"
 grepQuietInverse "Nix crashed" "$log"
+
+# A build that fails after the failover is reported against the machine
+# that ran it: the goal takes the name the coroutine reports
+# (`onMachine`), not the one it selected first. One build, so the
+# preferred machine wins the selection on a tie at load 0.
+failLog="$TEST_ROOT/log-failing"
+status=0
+# shellcheck disable=SC2016
+timeout 200 nix-build --store "file://$cache" -j0 --no-out-link -vvv --show-trace \
+  --builders "$unreachable ; $reachable" -E '
+  with import '"${config_nix}"';
+  mkDerivation { name = "inprocess-failover-ssh-ng-fails"; buildCommand = "echo failing-on-purpose; exit 1"; }
+' 2> "$failLog" || status=$?
+[[ $status -eq 100 ]] || { cat "$failLog" >&2; fail "expected exit status 100 for a build that failed on the machine, got $status"; }
+grepQuiet "cannot build on 'ssh-ng://localhost?remote-program=.*no-such-program" "$failLog"
+grepQuiet "while building '.*-inprocess-failover-ssh-ng-fails.drv' on 'ssh-ng://localhost'" "$failLog"
+grepQuietInverse "while building '.*-inprocess-failover-ssh-ng-fails.drv' on 'ssh-ng://localhost?remote-program" "$failLog"
+grepQuietInverse "Nix crashed" "$failLog"

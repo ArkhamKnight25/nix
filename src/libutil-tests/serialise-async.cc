@@ -14,8 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <chrono>
 #include <future>
 
@@ -84,6 +86,57 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
     ASSERT_NO_THROW(accessor = read.get());
     ASSERT_NO_THROW(write.get());
     EXPECT_THAT(accessor, ::nix::testing::HasContents(CanonPath::root, contents));
+}
+
+/* A write larger than the pipe is split: each write moves at most what
+   the pipe holds, and the reader only runs once the writer suspends.
+   Every 8 bytes carry their own index, so a part resent from the wrong
+   offset shows up at its first byte (the test above sends the same byte
+   throughout and could not tell). */
+TEST_F(AsyncFdTest, partialWritesContinueWhereTheyStopped)
+{
+    Pipe pipe;
+    pipe.create();
+#ifdef F_SETPIPE_SZ
+    /* Smaller pipe, more parts; best effort. */
+    (void) ::fcntl(pipe.writeSide.get(), F_SETPIPE_SZ, 4096);
+#endif
+
+    std::string contents;
+    for (uint64_t i = 0; contents.size() < (4u << 20); ++i)
+        contents.append(reinterpret_cast<const char *>(&i), sizeof i);
+
+    auto write = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSink sink(ctx, yield, std::move(pipe.writeSide));
+            /* Larger than the sink's buffer: one unbuffered write. */
+            sink(contents);
+            sink.flush();
+        },
+        asio::use_future);
+
+    auto read = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            AsyncFdSource source(ctx, yield, std::move(pipe.readSide));
+            std::string got(contents.size(), '\0');
+            source(got.data(), got.size());
+            char c;
+            EXPECT_THROW(source(&c, 1), EndOfFile);
+            return got;
+        },
+        asio::use_future);
+
+    runBounded();
+    ASSERT_TRUE(ready(write));
+    ASSERT_TRUE(ready(read)) << "the reader did not get every byte";
+    ASSERT_NO_THROW(write.get());
+    std::string got;
+    ASSERT_NO_THROW(got = read.get());
+    auto [mismatch, _] = std::mismatch(contents.begin(), contents.end(), got.begin());
+    EXPECT_TRUE(mismatch == contents.end())
+        << "first wrong byte at offset " << (mismatch - contents.begin());
 }
 
 /* The current activity is per thread. Two coroutines that each push one

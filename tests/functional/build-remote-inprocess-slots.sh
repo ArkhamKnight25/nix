@@ -19,6 +19,13 @@
 #    or every other one has finished, so a worker that ran one remote
 #    build at a time would leave the first builder waiting until its
 #    bounded wait ran out.
+# 3. One slot, two derivations, the first held until released: the
+#    second is turned away (postponed) again and again while the first
+#    runs, and starts only once it is done. A waiting goal asks again
+#    only every `build-poll-interval` (5 s by default), so case 1 would
+#    not notice a slot given back before its build ends; here the
+#    interval is 1 s and the first build runs until the test has seen
+#    the second turned away twice.
 #
 # Setup as in build-remote-inprocess-concurrent.sh: binary-cache client
 # store, `-j0`, the test's own store as the machine, no sandbox, so the
@@ -38,8 +45,9 @@ requireDaemonIsThisVersion
 cache="$TEST_ROOT/cache"
 log="$TEST_ROOT/log"
 rm -rf "$cache" "$TEST_ROOT/sync-"*
-mkdir -p "$TEST_ROOT/sync-one" "$TEST_ROOT/sync-two/inflight" "$TEST_ROOT/sync-two/done"
-trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; killDaemon' EXIT
+mkdir -p "$TEST_ROOT/sync-one" "$TEST_ROOT/sync-two/inflight" "$TEST_ROOT/sync-two/done" "$TEST_ROOT/sync-three"
+client=
+trap '[[ $? -eq 0 ]] || { echo "--- client log ---" >&2; cat "$log" >&2; }; touch "$TEST_ROOT/sync-three/release"; [[ -n $client ]] && kill -KILL -- -"$client" 2> /dev/null; killDaemon' EXIT
 
 # --- 1. one slot ------------------------------------------------------
 
@@ -124,4 +132,70 @@ done
 # finds the other still in flight.
 [[ $(grep -c '^overlap$' "$sync/met") -ge 1 ]] || fail "no two builders ran at once on a two-slot machine"
 [[ $(grep -c "remote build done" "$log") -eq 4 ]]
+grepQuietInverse "starting build hook '" "$log"
+
+# --- 3. a slot stays taken while its build runs -----------------------
+
+sync="$TEST_ROOT/sync-three"
+
+# Each builder says it started, then waits for `release`, bounded at
+# 1200 polls of 0.1 s (two minutes). (Quoted heredoc: `$out` and `$i`
+# are for the builder.)
+cat > "$TEST_ROOT/slots-three.nix" <<'NIX'
+{ configNix, sync }:
+with import configNix;
+map (k: mkDerivation {
+  name = "inprocess-slots-three-${k}";
+  buildCommand = ''
+    touch ${sync}/started-${k}
+    i=0
+    while [ ! -e ${sync}/release ]; do
+      i=$((i + 1))
+      if [ $i -ge 1200 ]; then exit 1; fi
+      sleep 0.1
+    done
+    echo ${k} > $out
+  '';
+}) [ "a" "b" ]
+NIX
+
+timeout 200 nix-build "$TEST_ROOT/slots-three.nix" \
+  --argstr configNix "$config_nix" --argstr sync "$sync" \
+  --store "file://$cache" --builders "ssh-ng://localhost - - 1 1" -j0 \
+  --option build-poll-interval 1 --no-out-link -vvv 2> "$log" &
+client=$!
+
+for _ in $(seq 120); do
+    [[ -e $sync/started-a || -e $sync/started-b ]] && break
+    sleep 1
+done
+if [[ -e $sync/started-a ]]; then
+    other=b
+elif [[ -e $sync/started-b ]]; then
+    other=a
+else
+    fail "neither build started"
+fi
+
+# Each time the waiting goal is turned away it waits for a while
+# (worker.cc, waitForAWhile, traced at `-vvv`).
+turnedAway() {
+    grep -c "building derivation '.*-inprocess-slots-three-$other.drv': wait for a while" "$log" || true
+}
+before=$(turnedAway)
+for _ in $(seq 120); do
+    [[ -e $sync/started-$other ]] && break
+    (( $(turnedAway) >= before + 2 )) && break
+    sleep 0.5
+done
+[[ ! -e $sync/started-$other ]] || fail "the second build started on a one-slot machine while the first was running"
+(( $(turnedAway) >= before + 2 )) || fail "the waiting build was never turned away again"
+
+touch "$sync/release"
+status=0
+wait "$client" || status=$?
+client=
+[[ $status -eq 0 ]] || fail "nix-build failed with status $status"
+[[ -e $sync/started-$other ]]
+[[ $(grep -c "remote build done" "$log") -eq 2 ]]
 grepQuietInverse "starting build hook '" "$log"
