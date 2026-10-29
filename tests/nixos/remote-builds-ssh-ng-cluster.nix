@@ -88,6 +88,8 @@ in
               ServerAliveInterval 5
               ServerAliveCountMax 3
             '';
+            # Throwaway diagnostics.
+            environment.systemPackages = [ pkgs.gdb ];
           };
       };
 
@@ -185,14 +187,44 @@ in
 
         # A machine that dies while building fails that build promptly,
         # and the other machines keep working.
+        # Throwaway diagnostics: what the client is doing, every second.
         client.execute(
-            f"(nix-build {expr} --no-out-link --argstr name crash --argstr seconds 300 > crash.log 2>&1; echo $? > crash.exit) > /dev/null 2>&1 &"
+            "(while sleep 1; do echo \"$(date +%T) lines=$(wc -l < crash.log 2> /dev/null) nix-build=$(pgrep -x nix-build | tr '\\n' ' ') nix-daemon=$(pgrep -x nix-daemon | tr '\\n' ' ') ssh=$(pgrep -x ssh | tr '\\n' ' ')\"; done > sampler.log 2>&1 &) > /dev/null 2>&1"
+        )
+
+        def dump_client():
+            print("=== DIAG ps")
+            print(client.execute("ps -eo pid,ppid,stat,etime,wchan:32,args --forest | grep -vE ' \\[|ps -eo|grep -vE'")[1])
+            pids = client.execute("pgrep -x 'nix-build|nix-daemon|ssh' | tr '\\n' ' '")[1].split()
+            for pid in pids:
+                print(f"=== DIAG pid {pid}:", client.execute(f"tr '\\0' ' ' < /proc/{pid}/cmdline")[1])
+                print(client.execute(f"for t in /proc/{pid}/task/*; do echo \"--- task $t $(cat $t/comm) wchan=$(cat $t/wchan)\"; cat $t/stack; done")[1])
+                print(client.execute(f"ls -l /proc/{pid}/fd")[1])
+                print(client.execute(f"gdb -p {pid} -batch -nx -ex 'set pagination off' -ex 'info threads' -ex 'thread apply all bt' 2>&1 | grep -vE '^.New LWP|^warning: (Unable|could not|Target and debugger)' | head -n 300")[1])
+            print("=== DIAG sampler.log")
+            print(client.execute("cat sampler.log")[1])
+            print("=== DIAG crash.log")
+            print(client.execute("cat -n crash.log | tail -n 300")[1])
+            print("=== DIAG journal")
+            print(client.execute("journalctl -b --no-pager -o short-precise | tail -n 60")[1])
+
+        client.execute(
+            f"(nix-build {expr} --no-out-link -vvvv --argstr name crash --argstr seconds 300 > crash.log 2>&1; echo $? > crash.exit) > /dev/null 2>&1 &"
         )
         wait_until(lambda: who_runs("marker-crash"), 60, "the crash build to start on a builder")
         victim = who_runs("marker-crash")[0]
         print("crash build runs on", victim.name)
+        print("DIAG crashing at", client.succeed("date +%T").strip())
         victim.crash()
-        wait_until(lambda: client.execute("test -e crash.exit")[0] == 0, 120, "the client to notice the dead machine")
+        crashed_at = time.monotonic()
+        try:
+            wait_until(lambda: client.execute("test -e crash.exit")[0] == 0, 120, "the client to notice the dead machine")
+        except Exception:
+            dump_client()
+            raise
+        print("DIAG client exited", time.monotonic() - crashed_at, "s after the crash")
+        print("=== DIAG sampler.log")
+        print(client.execute("cat sampler.log")[1])
         status = client.succeed("cat crash.exit").strip()
         assert status != "0", "the build on the dead machine was reported as successful"
         print(client.succeed("sed -e 's/^/crash-log:/' crash.log"))

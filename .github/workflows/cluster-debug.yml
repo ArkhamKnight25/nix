@@ -1,0 +1,29 @@
+name: "cluster debug"
+
+# Throwaway: run only the ssh-ng cluster VM test, with diagnostics.
+on:
+  push:
+    branches:
+      - 'ci/cluster-debug*'
+
+permissions: read-all # zizmor: ignore[excessive-permissions]
+
+jobs:
+  cluster:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: ./.github/actions/install-nix-action # zizmor: ignore[self-repository]
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        dogfood: true
+        extra_nix_config: "sandbox = true"
+    - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    - name: Run the cluster VM test
+      run: |
+        nix build --file ci/gha/tests/wrapper.nix vmTests.remoteBuildsSshNgCluster -L \
+          --arg withInstrumentation false --argstr stdenv stdenv
