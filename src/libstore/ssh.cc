@@ -107,6 +107,21 @@ SSHMaster::SSHMaster(
 
 void SSHMaster::addCommonSSHOpts(OsStrings & args)
 {
+    /* On every invocation for this host, the master included: a prompt
+       from any of them would stall the thread that must not block. And
+       no multiplexing: a connection of its own always prints the
+       `started` line below, so nothing needs to ask whether a master is
+       running (`isMasterRunning` runs `ssh -O check` synchronously, which
+       the worker's thread cannot afford per connection). First, because
+       ssh keeps the first value given for an option: a `ControlPath` in
+       `NIX_SSHOPTS` would otherwise multiplex the connection, and the
+       `started` line would never come. */
+    if (batchMode) {
+        args.push_back(OS_STR("-oBatchMode=yes"));
+        args.push_back(OS_STR("-oControlMaster=no"));
+        args.push_back(OS_STR("-oControlPath=none"));
+    }
+
     auto sshArgs = getNixSshOpts();
     args.insert(args.end(), sshArgs.begin(), sshArgs.end());
 
@@ -119,17 +134,6 @@ void SSHMaster::addCommonSSHOpts(OsStrings & args)
     }
     if (compress)
         args.push_back(OS_STR("-C"));
-    /* On every invocation for this host, the master included: a prompt
-       from any of them would stall the thread that must not block. And
-       no multiplexing: a connection of its own always prints the
-       `started` line below, so nothing needs to ask whether a master is
-       running (`isMasterRunning` runs `ssh -O check` synchronously, which
-       the worker's thread cannot afford per connection). */
-    if (batchMode) {
-        args.push_back(OS_STR("-oBatchMode=yes"));
-        args.push_back(OS_STR("-oControlMaster=no"));
-        args.push_back(OS_STR("-oControlPath=none"));
-    }
 
     if (authority.port)
         args.push_back(string_to_os_string(fmt("-p%d", *authority.port)));
@@ -242,6 +246,12 @@ SSHMaster::startCommand(OsStrings && command, OsStrings && extraSshArgs, bool aw
         conn->sshPid.setKillSignal(SIGTERM);
         conn->sshPid.setKillTimeout(std::chrono::seconds(10));
     }
+    /* In its own session (batch mode, above) the child leads its own
+       process group: kill the group, so that ssh's own children (a
+       `ProxyCommand`, say) go with it instead of keeping the connection
+       to the machine open. */
+    if (batchMode)
+        conn->sshPid.setSeparatePG(true);
 #endif
 
     in.readSide.close();
