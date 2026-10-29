@@ -88,6 +88,7 @@ Worker::~Worker()
        connection's descriptors close with it. A destructor must not
        throw, hence the catch. */
     try {
+        PushActivity keepActivity(getCurActivity());
         ioContext.restart();
         ioContext.run_for(std::chrono::seconds(5));
         if (!ioContext.stopped())
@@ -573,6 +574,10 @@ void Worker::waitForInput()
             watched.back().descriptor.async_wait(
                 asio::posix::stream_descriptor::wait_read, [](const boost::system::error_code &) {});
         }
+
+        /* Coroutines resumed below set the current activity to their own;
+           keep the worker's across the wait. */
+        PushActivity keepActivity(getCurActivity());
 
         ioContext.restart();
         if (useTimeout)

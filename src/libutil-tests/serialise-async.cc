@@ -86,6 +86,68 @@ TEST_F(AsyncFdTest, dumpStringThroughPipe)
     EXPECT_THAT(accessor, ::nix::testing::HasContents(CanonPath::root, contents));
 }
 
+/* The current activity is per thread. Two coroutines that each push one
+   and suspend inside it must not see each other's: A pushes, starts B
+   (which asio runs at once, up to B's first suspension), then suspends;
+   A finishes, then B finishes. Each must find its own activity on
+   resumption, A must still have its own after starting B, and the
+   thread must be back at none when both are done. The loop's owner
+   keeps its activity across the run the same way the worker does. */
+TEST_F(AsyncFdTest, suspendedCoroutinesKeepTheirOwnActivity)
+{
+    Pipe pipeA, pipeB;
+    pipeA.create();
+    pipeB.create();
+
+    const ActivityId actA = 1001, actB = 2002;
+    std::future<ActivityId> seenByB;
+    ActivityId seenByAAfterSpawn = 0;
+
+    auto seenByA = asio::spawn(
+        ctx,
+        [&](asio::yield_context yield) {
+            ActivityId seen;
+            {
+                PushActivity push(actA);
+                {
+                    PushActivity keep(getCurActivity());
+                    seenByB = asio::spawn(
+                        ctx,
+                        [&](asio::yield_context yield) {
+                            PushActivity push(actB);
+                            AsyncFdSource source(ctx, yield, std::move(pipeB.readSide));
+                            char c;
+                            source(&c, 1);
+                            return getCurActivity();
+                        },
+                        asio::use_future);
+                }
+                seenByAAfterSpawn = getCurActivity();
+                AsyncFdSource source(ctx, yield, std::move(pipeA.readSide));
+                char c;
+                source(&c, 1);
+                seen = getCurActivity();
+            }
+            /* A's activity is popped; only now may B finish. */
+            writeFull(pipeB.writeSide.get(), "b");
+            return seen;
+        },
+        asio::use_future);
+
+    asio::post(ctx, [&] { writeFull(pipeA.writeSide.get(), "a"); });
+
+    {
+        PushActivity keep(getCurActivity());
+        runBounded();
+    }
+    ASSERT_TRUE(ready(seenByA));
+    ASSERT_TRUE(ready(seenByB));
+    EXPECT_EQ(seenByAAfterSpawn, actA);
+    EXPECT_EQ(seenByA.get(), actA);
+    EXPECT_EQ(seenByB.get(), actB);
+    EXPECT_EQ(getCurActivity(), 0u);
+}
+
 TEST_F(AsyncFdTest, writeToClosedPipe)
 {
     Pipe pipe;

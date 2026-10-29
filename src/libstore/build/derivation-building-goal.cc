@@ -1771,6 +1771,10 @@ Goal::Co<std::optional<DerivationBuildingGoal::Result>> DerivationBuildingGoal::
        silent corruption. */
     static constexpr size_t remoteBuildStackSize = 8 * 1024 * 1024;
 
+    /* asio runs the coroutine at once, up to its first suspension, since
+       we are on the loop's thread; keep this goal's activity across that. */
+    PushActivity keepActivity(getCurActivity());
+
     asio::spawn(
         worker.ioContext,
         std::allocator_arg,
