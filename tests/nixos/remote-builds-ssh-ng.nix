@@ -109,7 +109,11 @@ in
         builder.wait_for_unit("multi-user.target")
         builder.wait_for_unit("network-addresses-eth1.service")
 
-        client.succeed(f"ssh -o StrictHostKeyChecking=no {builder.name} 'echo hello world'")
+        # `-n`: not reading the driver's console as stdin; bounded and
+        # retried, so a stuck first connection cannot hang the test.
+        client.wait_until_succeeds(
+            f"timeout 30 ssh -n -o StrictHostKeyChecking=no {builder.name} 'echo hello world'", timeout=180
+        )
 
         # Perform a build
         out = client.succeed("nix-build ${expr nodes.client 1} 2> build-output")
