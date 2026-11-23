@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - master
+      - ci/in-process-remote-builds
   workflow_dispatch:
     inputs:
       dogfood:
@@ -288,7 +289,7 @@ jobs:
     timeout-minutes: 60
     if: >-
       github.event_name == 'push' &&
-      github.ref_name == 'master'
+      (github.ref_name == 'master' || github.ref_name == 'ci/in-process-remote-builds')
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
